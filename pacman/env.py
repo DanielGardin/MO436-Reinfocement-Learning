@@ -1,7 +1,8 @@
-from utils import discrete, manhattan_distance
-from actions import Actions
-from agents import Ghost
+from pacman.utils import discrete, manhattan_distance
+from pacman.actions import Actions
+from pacman import agents
 import numpy as np
+import time, signal
 
 class style():
     BLACK = '\033[30m'
@@ -15,6 +16,27 @@ class style():
     UNDERLINE = '\033[4m'
     RESET = '\033[0m'
 
+def load_ghost(ghost_name):
+
+    if hasattr(agents, ghost_name):
+        return getattr(agents, ghost_name)
+
+    raise Exception(f'The ghost {ghost_name} is not found')
+
+class timeout:
+    def __init__(self, seconds=0., error_message='Execution timed out'):
+        self.seconds = seconds
+        self.error_message = error_message
+
+    def handle_timeout(self, signum, frame):
+        raise TimeoutError(self.error_message)
+
+    def __enter__(self):
+        signal.signal(signal.SIGALRM, self.handle_timeout)
+        signal.setitimer(signal.ITIMER_REAL, self.seconds)
+
+    def __exit__(self, type, value, traceback):
+        signal.alarm(0)
 class PacmanEnv:
     PACMAN_SPEED  = 1
     SCARED_TIME   = 40
@@ -30,7 +52,8 @@ class PacmanEnv:
     GHOST_COLORS = [
         style.RED,
         style.CYAN,
-        style.MAGENTA
+        style.MAGENTA,
+        style.GREEN
     ]
 
     SCARED_GHOST_COLOR = style.BLUE
@@ -38,6 +61,7 @@ class PacmanEnv:
 
     def __init__(self,
                  layout_text,
+                 ghost_names=None,
                  render_mode = 'ansi'
                  ):
         self.width  = len(layout_text[0])
@@ -51,8 +75,9 @@ class PacmanEnv:
         self.direction = Actions.NOOP
         self.ghosts    = []
 
-        self.layout = layout_text
-        self._process_layout(layout_text)
+        self.layout      = layout_text
+        self.ghost_names = ghost_names
+        self._process_layout(layout_text, ghost_names)  
 
         self.score        = 0
         self.done         = False
@@ -62,17 +87,17 @@ class PacmanEnv:
         self.render_mode = render_mode
     
 
-    def _process_layout(self, layout_text):
+    def _process_layout(self, layout_text, ghost_names=None):
         """
         Coordinates are flipped from the input format to the (x,y) convention here
 
         The shape of the maze.  Each character
         represents a different type of object.
-         % - Wall
-         . - Food
-         o - Capsule
-         # - Ghost, where # is a numeric value, or G, if all ghosts are the same
-         P - Pacman
+        - % - Wall
+        - . - Food
+        - o - Capsule
+        - \# - Ghost, where # is a numeric value, or G, if all ghosts are the same
+        - P - Pacman
         Other characters are ignored.
         """
         max_y = self.height - 1
@@ -88,10 +113,23 @@ class PacmanEnv:
                     self.capsules.add((x, y))
                 elif layout_char == 'P':
                     self.position = (x, y)
-                elif layout_char.isnumeric() or layout_char == 'G':
-                    # Change when different Ghosts are included
-                    ghost = Ghost((x, y))
+                elif layout_char.isnumeric():
+                    if ghost_names is None:
+                        ghost = agents.RandomGhost((x, y))
+                    else:
+                        idx = int(layout_char)
+                        ghost = load_ghost(ghost_names[idx])((x, y))
+                    
                     self.ghosts.append(ghost)
+    
+                elif layout_char == 'G':
+                    if ghost_names is None:
+                        ghost = agents.RandomGhost((x, y))
+                    else:
+                        ghost = load_ghost(ghost_names)((x, y))
+
+                    self.ghosts.append(ghost)
+
 
     @classmethod
     def from_file(cls, name:str, **kwargs):
@@ -99,9 +137,12 @@ class PacmanEnv:
         Loads a layout from a ./layouts folder. The layout name must be
         provided without extension.
         """
-        path = f'layouts/{name}.lay'
+        import os
 
-        with open(path, 'r') as file:
+        path = os.path.dirname(__file__)
+        path = os.path.join(path, f'layouts/{name}.lay')
+
+        with open(os.path.realpath(path), 'r') as file:
             layout_text = [line.strip() for line in file]
 
         return cls(layout_text, **kwargs)
@@ -178,7 +219,6 @@ class PacmanEnv:
         
         grid[x][y] += style.RESET
 
-
         for i, ghost in enumerate(self.ghosts):
             x, y = discrete(ghost.position)
 
@@ -186,7 +226,7 @@ class PacmanEnv:
                 grid[x][y] = self.SCARED_GHOST_COLOR
             
             else:
-                grid[x][y] = self.GHOST_COLORS[i]
+                grid[x][y] = self.GHOST_COLORS[i % 4]
 
 
             if ghost.direction == Actions.UP:
@@ -265,7 +305,7 @@ class PacmanEnv:
         return score_change
 
 
-    def reset(self):
+    def reset(self, *, seed=None):
         """
         Resets the environment to its initial state.
         """
@@ -276,7 +316,7 @@ class PacmanEnv:
         self.direction = Actions.NOOP
         self.ghosts   = []
 
-        self._process_layout(self.layout)
+        self._process_layout(self.layout, ghost_names=self.ghost_names)
 
         self.score        = 0
 
@@ -359,5 +399,52 @@ class PacmanEnv:
         the agent uses to decide.
         """
 
+
         return self
 
+    def run_game(self,
+                 policy : agents.Agent,
+                 max_length   = None,
+                 timeout_time = 0,
+                 delay        = 0,
+                 seed         = None):
+        """
+        Run an entire game given a policy.
+
+        # Arguments
+
+        policy : Agent
+            the policy being evaluated. Must inherit from Agent class
+        
+        max_length : int, default=None
+            maximum number of steps before the game is stopped
+        
+        timeout : int, default=0
+            computational limit, in seconds, for an agent to output an action.
+            Letting it to be 0 means no timeout.
+        
+        delay : int, default=0
+            time, in 
+        """
+        self.reset(seed=seed)
+
+        experiences = []
+
+        n_steps = 0
+        obs = self.observation()
+        while True:
+            time.sleep(delay)
+
+            with timeout(timeout_time):
+                action = policy.act(obs)
+
+            next_obs, reward, done = self.step(action)
+
+            experiences.append((obs, action, reward, next_obs))
+
+            n_steps += 1
+            if max_length is not None and n_steps >= max_length: break
+            if done: break
+
+        return experiences
+        

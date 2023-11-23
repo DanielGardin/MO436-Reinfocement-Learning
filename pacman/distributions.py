@@ -9,31 +9,30 @@ class Distribution(ABC):
     pass
 
 
-class DiscreteDistribution(Counter, Distribution):
+class DiscreteDistribution(dict, Distribution):
     
     @classmethod
     def from_probs(cls, values, probs):
+        assert sum(probs) == 1
         return cls(zip(values, probs))
 
-    @property
-    def probs(self):
-        total = float(sum(self.values()))
-
-        probs = dict()
-
-        for key, value in self.items():
-            probs[key] = value / total
-
-        return probs
 
     def mode(self):
-        return self.most_common(1)[0][0]
-    
+        best_value = None
+        best_prob  = 0.
+        for value, prob in self.items():
+            if prob > best_prob:
+                best_prob  = prob
+                best_value = value
+        
+        return best_value
+
+
     def sample(self):
         r = random()
 
         accum_prob = 0.
 
-        for value, prob in self.probs.items():
+        for value, prob in self.items():
             accum_prob += prob
             if r <= accum_prob: return value

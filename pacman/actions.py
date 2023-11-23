@@ -3,7 +3,7 @@ class Actions:
     DOWN  = 'Down'
     RIGHT = 'Right'
     LEFT  = 'Left'
-    NOOP  =  None
+    NOOP  = 'No action'
 
     actions = [UP, DOWN, RIGHT, LEFT]
 
@@ -31,6 +31,13 @@ class Actions:
     def reverse_direction(action):
         return Actions.REVERSE[action]
 
+    @staticmethod
+    def turn_right(action):
+        return Actions.TURN_RIGHT[action]
+    
+    @staticmethod
+    def turn_left(action):
+        return Actions.TURN_LEFT[action]  
 
     @staticmethod
     def vector_to_action(vector):
