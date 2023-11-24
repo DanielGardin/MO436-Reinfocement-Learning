@@ -1,8 +1,18 @@
 from pacman.utils import discrete, manhattan_distance
 from pacman.actions import Actions
 from pacman import agents
+import time, signal, sys
 import numpy as np
-import time, signal
+
+def is_running_in_jupyter():
+    try:
+        get_ipython()
+        return True
+    except NameError:
+        return False
+
+if is_running_in_jupyter():
+    from IPython.display import clear_output
 
 class style():
     BLACK = '\033[30m'
@@ -399,7 +409,9 @@ class PacmanEnv:
 
     def render(self):
         if self.render_mode == 'ansi':
+            if is_running_in_jupyter(): clear_output()
             print(self)
+
         
 
     def observation(self):
@@ -417,7 +429,7 @@ class PacmanEnv:
                  policy : agents.Agent,
                  max_length   = None,
                  timeout_time = 0,
-                 delay        = 0,
+                 delay        = 0.,
                  seed         = None):
         """
         Run an entire game given a policy.
