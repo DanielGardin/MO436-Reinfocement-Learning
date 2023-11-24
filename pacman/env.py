@@ -37,6 +37,8 @@ class timeout:
 
     def __exit__(self, type, value, traceback):
         signal.alarm(0)
+
+
 class PacmanEnv:
     PACMAN_SPEED  = 1
     SCARED_TIME   = 40
@@ -86,6 +88,14 @@ class PacmanEnv:
 
         self.render_mode = render_mode
     
+    def __hash__(self):
+        state_repr = tuple(zip(*np.where(self.food == 1))) + \
+                     tuple(self.capsules) + \
+                     tuple(ghost.position for ghost in self.ghosts) + \
+                     self.position
+
+        return hash(state_repr)
+
 
     def _process_layout(self, layout_text, ghost_names=None):
         """
@@ -179,7 +189,7 @@ class PacmanEnv:
         
         return legal_actions
 
-    
+
     def __str__(self):
         """Ansi representation of a state."""
 
@@ -398,9 +408,10 @@ class PacmanEnv:
         This might be changed accordingly to the intended information
         the agent uses to decide.
         """
+        from copy import deepcopy
 
+        return deepcopy(self)
 
-        return self
 
     def run_game(self,
                  policy : agents.Agent,

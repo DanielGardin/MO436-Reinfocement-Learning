@@ -1,3 +1,5 @@
+from pacman.distributions import DiscreteDistribution
+
 class Actions:
     UP    = 'Up'
     DOWN  = 'Down'
@@ -68,3 +70,7 @@ class Actions:
         x, y = position
 
         return (x + dx, y + dy)
+    
+    @staticmethod
+    def sample():
+        return DiscreteDistribution.from_probs(Actions.actions, [1/len(Actions.actions) for _ in Actions.actions]).sample()
