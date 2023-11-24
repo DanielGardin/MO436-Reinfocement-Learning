@@ -325,7 +325,7 @@ class PacmanEnv:
         return score_change
 
 
-    def reset(self, *, seed=None):
+    def reset(self, *, random_init=False, seed=None):
         """
         Resets the environment to its initial state.
         """
@@ -339,6 +339,7 @@ class PacmanEnv:
         self._process_layout(self.layout, ghost_names=self.ghost_names)
 
         self.score        = 0
+        self.position     = self.get_random_legal_position()
 
         self.render()
 
