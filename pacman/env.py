@@ -1,4 +1,5 @@
 from pacman.utils import discrete, manhattan_distance
+from collections.abc import Sequence 
 from pacman.actions import Actions
 from pacman import agents
 import time, signal, sys
@@ -74,7 +75,8 @@ class PacmanEnv:
     def __init__(self,
                  layout_text,
                  ghost_names=None,
-                 render_mode = 'ansi'
+                 render_mode = 'ansi',
+                 state_space = 'default'
                  ):
         self.width  = len(layout_text[0])
         self.height = len(layout_text)
@@ -91,13 +93,18 @@ class PacmanEnv:
         self.ghost_names = ghost_names
         self._process_layout(layout_text, ghost_names)  
 
+        self.n_food       = np.count_nonzero(self.food)
         self.score        = 0
         self.done         = False
         self._win         = False
         self._lose        = False
 
         self.render_mode = render_mode
-    
+        self.state_space = state_space
+
+        self.features    = {}
+
+
     def __hash__(self):
         state_repr = tuple(zip(*np.where(self.food == 1))) + \
                      tuple(self.capsules) + \
@@ -295,13 +302,47 @@ class PacmanEnv:
 
     def hascapsule(self, position): return position in self.capsules
 
-    def get_num_food(self): return self.food.sum()
+    def get_num_food(self): return np.count_nonzero(self.food)
+
+    def get_total_food(self) : return self.n_food
 
     def isterminal(self): return self.done
     
     def iswin(self):  return self._win
 
     def islose(self): return self._lose
+
+    def search_dist(self, source, target):
+        if isinstance(target, tuple):
+            target = [target]
+
+        visited = {}
+        queue = [source]
+        dists = [0]
+
+        while queue:
+            candidate = queue.pop(0)
+            distance  = dists.pop(0)
+
+            if candidate in visited:
+                continue
+
+            if self.haswall(candidate):
+                continue
+
+            if candidate in target:
+                break
+            
+            x, y = candidate
+            new_candidates = [(x+1, y), (x-1, y), (x, y+1), (x, y-1)]
+
+            for new_candidate in new_candidates:
+                queue.append(new_candidate)
+                dists.append(distance + 1)
+            
+            visited[candidate] = distance
+            
+        return distance
 
     ##################################################################
     # Environment mechanism, this implementation follows Gymnasium   #
@@ -339,7 +380,9 @@ class PacmanEnv:
         self._process_layout(self.layout, ghost_names=self.ghost_names)
 
         self.score        = 0
-        self.position     = self.get_random_legal_position()
+
+        if random_init:
+            self.position     = self.get_random_legal_position()
 
         self.render()
 
@@ -405,7 +448,7 @@ class PacmanEnv:
 
         self.render()
 
-        return self.observation(), score_change, self.done
+        return self.observation(), score_change, self.done, self.features
 
 
     def render(self):
@@ -423,8 +466,38 @@ class PacmanEnv:
         """
         from copy import deepcopy
 
-        return deepcopy(self)
 
+        # Create feature space
+
+        self.add_feature('score',           self.get_score() )
+        self.add_feature('ghost dist',     [self.search_dist(self.position, ghost.position) for ghost in self.ghosts] )
+        self.add_feature('current_food',    self.get_num_food()/self.get_total_food() )
+        self.add_feature('nearest_food',    self.search_dist(self.position, list(zip(*np.where(self.food)))) )
+        self.add_feature('nearest_capsule', self.search_dist(self.position, self.capsules))
+
+        if self.state_space == 'default':
+            return deepcopy(self)
+        
+        elif self.state_space == 'feature':
+            return self.feature_vector()
+
+
+    def add_feature(self, feature_name, feature):
+        self.features[feature_name] = feature
+    
+
+    def feature_vector(self):
+        vector = []
+
+        for feature in self.features.values():
+            if isinstance(feature, Sequence):
+                vector.extend(feature)
+            else:
+                vector.append(feature)
+        
+        return np.array(vector)
+
+        
 
     def run_game(self,
                  policy : agents.Agent,
@@ -462,7 +535,7 @@ class PacmanEnv:
             with timeout(timeout_time):
                 action = policy.act(obs)
 
-            next_obs, reward, done = self.step(action)
+            next_obs, reward, done, info = self.step(action)
 
             experiences.append((obs, action, reward, next_obs))
 
