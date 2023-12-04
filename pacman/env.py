@@ -55,11 +55,12 @@ class PacmanEnv:
     SCARED_TIME   = 40
     COLLISION_TOL = .7
 
-    FOOD_REWARD  = 10
-    GHOST_REWARD = 200
-    WIN_REWARD   = 500
+    FOOD_REWARD  = 1
+    GHOST_REWARD = 10
+    WIN_REWARD   = 50
+
     TIME_PENALTY = 1
-    LOSE_PENALTY = 200
+    LOSE_PENALTY = 20
 
     PACMAN_COLOR = style.YELLOW
     GHOST_COLORS = [
