@@ -306,7 +306,7 @@ class PacmanEnv:
         grid_text  = '\n'.join([' '.join(row) for row in grid])
         score_text = f"\nScore: {self.score}"
 
-        terminal_text = ' Game Over!' if self.islose() else ''
+        terminal_text = ' Game Over!' if self.is_lose() else ''
 
         return grid_text + score_text + terminal_text
 
