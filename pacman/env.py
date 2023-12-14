@@ -54,6 +54,7 @@ class PacmanEnv:
     PACMAN_SPEED  = 1
     SCARED_TIME   = 40
     COLLISION_TOL = .7
+    MAX_STEPS     = 100
 
     FOOD_REWARD  = 1
     GHOST_REWARD = 10
@@ -96,14 +97,34 @@ class PacmanEnv:
 
         self.n_food       = np.count_nonzero(self.food)
         self.score        = 0
-        self.done         = False
-        self._win         = False
-        self._lose        = False
 
         self.render_mode = render_mode
         self.state_space = state_space
 
         self.features    = {}
+
+
+    def reset(self, *, random_init=False, seed=None):
+        """
+        Resets the environment to its initial state.
+        """
+
+        self.direction = Actions.NOOP
+        self.ghosts   = []
+
+        self._process_layout(self.layout, ghost_names=self.ghost_names)
+
+        self.score        = 0
+        self.current_step = 0
+
+        if random_init:
+            self.position     = self.get_random_legal_position()
+
+        self.render()
+
+        done = self.is_terminal()
+
+        return self.observation(), done
 
 
     def __hash__(self):
@@ -160,7 +181,12 @@ class PacmanEnv:
 
 
     @classmethod
-    def from_file(cls, name:str, **kwargs):
+    def from_file(cls, 
+                  name:str,
+                  ghost_names=None,
+                  render_mode = 'ansi',
+                  state_space = 'default'
+                  ):
         """
         Loads a layout from a ./layouts folder. The layout name must be
         provided without extension.
@@ -173,7 +199,7 @@ class PacmanEnv:
         with open(os.path.realpath(path), 'r') as file:
             layout_text = [line.strip() for line in file]
 
-        return cls(layout_text, **kwargs)
+        return cls(layout_text, ghost_names, render_mode, state_space)
 
 
     def get_random_legal_position(self):
@@ -307,11 +333,11 @@ class PacmanEnv:
 
     def get_total_food(self) : return self.n_food
 
-    def isterminal(self): return self.done
+    def is_terminal(self): return self.is_win() or self.is_lose()
     
-    def iswin(self):  return self._win
+    def is_win(self):  return self.get_num_food() == 0
 
-    def islose(self): return self._lose
+    def is_lose(self): return self.current_step > self.MAX_STEPS or any([manhattan_distance(self.position, ghost.position) < self.COLLISION_TOL and not ghost.is_scared() for ghost in self.ghosts])
 
     def search_dist(self, source, target):
         if isinstance(target, tuple):
@@ -361,33 +387,8 @@ class PacmanEnv:
 
             else:
                 score_change -= self.LOSE_PENALTY
-                self._lose = True
-                self.done  = True
 
         return score_change
-
-
-    def reset(self, *, random_init=False, seed=None):
-        """
-        Resets the environment to its initial state.
-        """
-        self.done  = False
-        self._win  = False
-        self._lose = False
-
-        self.direction = Actions.NOOP
-        self.ghosts   = []
-
-        self._process_layout(self.layout, ghost_names=self.ghost_names)
-
-        self.score        = 0
-
-        if random_init:
-            self.position     = self.get_random_legal_position()
-
-        self.render()
-
-        return self.observation()
 
 
     def step(self, action):
@@ -399,11 +400,12 @@ class PacmanEnv:
         reward      : Reward obtained after executing the action
         done        : Whether the state is terminal (or truncated) or not
         """
-        if self.done:
+        if self.is_terminal():
             self.render()
 
             return self.observation(), 0, True
 
+        self.current_step += 1
         score_change = 0
 
         # Every agent decides an action
@@ -444,14 +446,13 @@ class PacmanEnv:
 
         if self.get_num_food() == 0 and not self.done:
             score_change += self.WIN_REWARD
-            self._win = True
-            self.done = True
 
         self.score += score_change
 
         self.render()
 
-        return self.observation(), score_change, self.done, self.features
+
+        return self.observation(), score_change, self.is_terminal(), self.features
 
 
     def render(self):
@@ -502,12 +503,12 @@ class PacmanEnv:
 
         
 
-    def run_game(self,
-                 policy : agents.Agent,
-                 max_length   = None,
-                 timeout_time = 0,
-                 delay        = 0.,
-                 seed         = None):
+    def run_policy(self,
+                   policy : agents.Agent,
+                   max_length   = None,
+                   timeout_time = 0,
+                   delay        = 0.,
+                   seed         = None):
         """
         Run an entire game given a policy.
 
