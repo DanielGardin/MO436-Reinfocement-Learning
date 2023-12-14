@@ -108,6 +108,7 @@ class PacmanEnv:
 
         self.features    = {}
 
+        if config is None: return
         for configuration, value in config.items():
             if hasattr(self, configuration) and configuration.isupper():
                 setattr(self, configuration, value)
@@ -194,7 +195,8 @@ class PacmanEnv:
                   name:str,
                   ghost_names=None,
                   render_mode = 'ansi',
-                  state_space = 'default'
+                  state_space = 'default',
+                  config = None
                   ):
         """
         Loads a layout from a ./layouts folder. The layout name must be
@@ -208,7 +210,7 @@ class PacmanEnv:
         with open(os.path.realpath(path), 'r') as file:
             layout_text = [line.strip() for line in file]
 
-        return cls(layout_text, ghost_names, render_mode, state_space)
+        return cls(layout_text, ghost_names, render_mode, state_space, config)
 
 
     def get_random_legal_position(self):
