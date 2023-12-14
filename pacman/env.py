@@ -2,7 +2,7 @@ from pacman.utils import discrete, manhattan_distance
 from collections.abc import Sequence 
 from pacman.actions import Actions
 from pacman import agents
-import time, signal, sys
+import time, signal, os
 import numpy as np
 
 def is_running_in_jupyter():
@@ -43,10 +43,13 @@ class timeout:
         raise TimeoutError(self.error_message)
 
     def __enter__(self):
+        if os.name == 'nt': return
+
         signal.signal(signal.SIGALRM, self.handle_timeout)
         signal.setitimer(signal.ITIMER_REAL, self.seconds)
 
     def __exit__(self, type, value, traceback):
+        if os.name == 'nt': return
         signal.alarm(0)
 
 
@@ -429,7 +432,7 @@ class PacmanEnv:
             ghost.apply_action(self, ghost_action)
 
             score_change += self.resolve_collision(ghost)
-        
+
 
         discrete_pos  = discrete(self.position)
         self.direction = action
