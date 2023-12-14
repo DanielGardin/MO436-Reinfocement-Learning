@@ -63,9 +63,9 @@ class PacmanEnv:
     GHOST_REWARD = 10
     WIN_REWARD   = 50
 
-    TIME_PENALTY = 1
+    TIME_PENALTY = 0
     LOSE_PENALTY = 20
-    WALL_PENALTY = 0
+    WALL_PENALTY = 1
 
     PACMAN_COLOR = style.YELLOW
     GHOST_COLORS = [
@@ -431,6 +431,9 @@ class PacmanEnv:
             dx, dy = Actions.action_to_vector(action, self.PACMAN_SPEED)
 
             self.position = (x + dx, y + dy)
+        
+        else:
+            score_change -= self.WALL_PENALTY
 
         for ghost, ghost_action in zip(self.ghosts, ghost_actions):
             score_change += self.resolve_collision(ghost)
