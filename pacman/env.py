@@ -444,7 +444,7 @@ class PacmanEnv:
                 for ghost in self.ghosts: ghost.scare(self.SCARED_TIME)
                 self.capsules.remove(discrete_pos)
 
-        if self.get_num_food() == 0 and not self.done:
+        if not self.is_lose() and self.get_num_food() == 0:
             score_change += self.WIN_REWARD
 
         self.score += score_change
