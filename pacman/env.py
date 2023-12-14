@@ -65,6 +65,7 @@ class PacmanEnv:
 
     TIME_PENALTY = 1
     LOSE_PENALTY = 20
+    WALL_PENALTY = 0
 
     PACMAN_COLOR = style.YELLOW
     GHOST_COLORS = [
@@ -81,7 +82,8 @@ class PacmanEnv:
                  layout_text,
                  ghost_names=None,
                  render_mode = 'ansi',
-                 state_space = 'default'
+                 state_space = 'default',
+                 config = None
                  ):
         self.width  = len(layout_text[0])
         self.height = len(layout_text)
@@ -105,6 +107,10 @@ class PacmanEnv:
         self.state_space = state_space
 
         self.features    = {}
+
+        for configuration, value in config.items():
+            if hasattr(self, configuration) and configuration.isupper():
+                setattr(self, configuration, value)
 
 
     def reset(self, *, random_init=False, seed=None):
