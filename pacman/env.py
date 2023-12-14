@@ -387,6 +387,8 @@ class PacmanEnv:
 
         self.render()
 
+        return self.observation()
+
 
     def step(self, action):
         """
