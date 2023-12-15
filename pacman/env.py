@@ -453,8 +453,6 @@ class PacmanEnv:
         # Every agent decides an action
         ghost_actions = {ghost : ghost.act(self) for ghost in self.ghosts}
 
-        print(ghost_actions)
-
         legal_actions = self.get_legal_actions(self.position)
 
         if action in legal_actions:
