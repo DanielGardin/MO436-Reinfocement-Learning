@@ -9,7 +9,7 @@ class Agent:
     create a subclass of this one and you must implement either `act` or 
     `get_distribution` methods.
     """
-    
+
     def __init_subclass__(cls):
         def act(self, state):
             dist = self.get_distribution(state)
@@ -45,6 +45,8 @@ class Ghost:
 
         self.name = self.__class__.__name__
 
+    def __repr__(self):
+        return f"{'scared ' if self.is_scared() else ''}{self.name} at {self.position}"
 
     def reset(self, pos=None):
         self.position     = self.initial_pos if pos is None else pos
@@ -58,11 +60,10 @@ class Ghost:
 
         legal_actions = state.get_legal_actions(self.position)
 
-
         if action not in legal_actions:
             raise Exception(f"Illegal ghost action {action}")
 
-        speed = Ghost.GHOST_SPEED
+        speed = self.GHOST_SPEED
         if self.is_scared():
             self.scared_timer -= 1
             speed /= 2
@@ -76,6 +77,7 @@ class Ghost:
 
     def scare(self, scare_time):
         self.scared_timer = scare_time
+
 
     def is_scared(self):
         return self.scared_timer > 0

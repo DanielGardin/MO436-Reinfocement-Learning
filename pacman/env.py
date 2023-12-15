@@ -82,7 +82,7 @@ class PacmanEnv:
                  layout_text,
                  ghost_names=None,
                  render_mode = 'ansi',
-                 state_space = 'default',
+                 state_space = "default",
                  config = None
                  ):
         self.width  = len(layout_text[0])
@@ -96,7 +96,7 @@ class PacmanEnv:
         self.env_food = np.zeros((self.width, self.height))
 
         self._capsules    = set()
-        self._ghosts      = []
+        self.ghosts      = []
         self.ghost_names = ghost_names
 
         self.initial_position  = (None, None)
@@ -107,8 +107,11 @@ class PacmanEnv:
 
         if config is None: return
         for configuration, value in config.items():
-            if hasattr(self, configuration) and configuration.isupper():
+            if hasattr(self.__class__, configuration):
                 setattr(self, configuration, value)
+            
+            else:
+                raise ValueError(f"No configuration named {config}.")
 
 
     def _process_layout(self, layout_text, ghost_names=None):
@@ -144,7 +147,7 @@ class PacmanEnv:
                         idx = int(layout_char)
                         ghost = load_ghost(ghost_names[idx])((x, y))
                     
-                    self._ghosts.append(ghost)
+                    self.ghosts.append(ghost)
     
                 elif layout_char == 'G':
                     if ghost_names is None:
@@ -152,7 +155,30 @@ class PacmanEnv:
                     else:
                         ghost = load_ghost(ghost_names)((x, y))
 
-                    self._ghosts.append(ghost)
+                    self.ghosts.append(ghost)
+
+
+    @classmethod
+    def from_file(cls, 
+                  name:str,
+                  ghost_names=None,
+                  render_mode = 'ansi',
+                  state_space = "default",
+                  config = None
+                  ):
+        """
+        Loads a layout from a ./layouts folder. The layout name must be
+        provided without extension.
+        """
+        import os
+
+        path = os.path.dirname(__file__)
+        path = os.path.join(path, f'layouts/{name}.lay')
+
+        with open(os.path.realpath(path), 'r') as file:
+            layout_text = [line.strip() for line in file]
+
+        return cls(layout_text, ghost_names, render_mode, state_space, config)
 
 
     def reset(self, *, random_init=False, seed=None):
@@ -162,8 +188,8 @@ class PacmanEnv:
 
         self.direction        = Actions.NOOP
         self.current_food     = self.env_food.copy()
-        self.current_ghosts   = self._ghosts.copy()
         self.current_capsules = self._capsules.copy()
+        for ghost in self.ghosts: ghost.reset()
 
         self.score        = 0
         self.current_step = 0
@@ -184,31 +210,24 @@ class PacmanEnv:
         return self.observation(), done
 
 
+    def __repr__(self):
+        representation = ""
+
+        if self.ready:
+
+            info = self.observation('info')
+
+            for feature, value in info.items():
+                representation += f'{feature:<20} {value}\n'
+
+        else:
+            representation = "Not ready Pacman environment."
+
+        return representation
+
+
     def set_render(self, render_mode):
         self.render_mode = render_mode
-
-
-    @classmethod
-    def from_file(cls, 
-                  name:str,
-                  ghost_names=None,
-                  render_mode = 'ansi',
-                  state_space = 'default',
-                  config = None
-                  ):
-        """
-        Loads a layout from a ./layouts folder. The layout name must be
-        provided without extension.
-        """
-        import os
-
-        path = os.path.dirname(__file__)
-        path = os.path.join(path, f'layouts/{name}.lay')
-
-        with open(os.path.realpath(path), 'r') as file:
-            layout_text = [line.strip() for line in file]
-
-        return cls(layout_text, ghost_names, render_mode, state_space, config)
 
 
     def get_random_legal_position(self):
@@ -230,10 +249,21 @@ class PacmanEnv:
         the current state.
         """
         legal_actions = []
-
+        x    , y     = position
         x_int, y_int = discrete(position)
 
-        for action in Actions.actions:
+        possible_actions = []
+
+        if x_int != x:
+            possible_actions = [Actions.LEFT, Actions.RIGHT]
+        
+        elif y_int != y:
+            possible_actions = [Actions.UP, Actions.DOWN]
+        
+        else:
+            possible_actions = Actions.actions
+
+        for action in possible_actions:
             dx, dy = Actions.action_to_vector(action)
             new_pos = discrete((x_int + dx, y_int + dy))
 
@@ -282,7 +312,7 @@ class PacmanEnv:
         
         grid[x][y] += style.RESET
 
-        for i, ghost in enumerate(self.current_ghosts):
+        for i, ghost in enumerate(self.ghosts):
             x, y = discrete(ghost.position)
 
             if ghost.is_scared():
@@ -327,8 +357,8 @@ class PacmanEnv:
 
     def get_score(self): return self.score
 
-    def get_ghosts_position(self):
-        return [ghost.position for ghost in self.current_ghosts]
+    def getghosts_position(self):
+        return [ghost.position for ghost in self.ghosts]
 
     def get_position(self): return self.position
 
@@ -346,7 +376,7 @@ class PacmanEnv:
     
     def is_win(self):  return self.get_num_food() == 0
 
-    def is_lose(self): return self.current_step > self.MAX_STEPS or any([manhattan_distance(self.position, ghost.position) < self.COLLISION_TOL and not ghost.is_scared() for ghost in self.current_ghosts])
+    def is_lose(self): return self.current_step > self.MAX_STEPS or any([manhattan_distance(self.position, ghost.position) < self.COLLISION_TOL and not ghost.is_scared() for ghost in self.ghosts])
 
     def search_dist(self, source, target):
         if isinstance(target, tuple):
@@ -421,12 +451,10 @@ class PacmanEnv:
         score_change = 0
 
         # Every agent decides an action
-        ghost_actions = [Actions.NOOP] * len(self.current_ghosts)
+        ghost_actions = {ghost : ghost.act(self) for ghost in self.ghosts}
 
-        for i, ghost in enumerate(self.current_ghosts):
-            ghost_actions[i] = ghost.act(self)
+        print(ghost_actions)
 
-        # Resolve collisions
         legal_actions = self.get_legal_actions(self.position)
 
         if action in legal_actions:
@@ -438,7 +466,7 @@ class PacmanEnv:
         else:
             score_change -= self.WALL_PENALTY
 
-        for ghost, ghost_action in zip(self.current_ghosts, ghost_actions):
+        for ghost, ghost_action in ghost_actions.items():
             score_change += self.resolve_collision(ghost)
 
             ghost.apply_action(self, ghost_action)
@@ -456,7 +484,7 @@ class PacmanEnv:
                 self.current_food[discrete_pos] = 0
 
             if self.hascapsule(discrete_pos):
-                for ghost in self.current_ghosts: ghost.scare(self.SCARED_TIME)
+                for ghost in self.ghosts: ghost.scare(self.SCARED_TIME)
                 self.current_capsules.remove(discrete_pos)
 
         if not self.is_lose() and self.get_num_food() == 0:
@@ -466,7 +494,7 @@ class PacmanEnv:
 
         self.render()
 
-        return self.observation(), score_change, self.is_terminal(), {}
+        return self.observation(), score_change, self.is_terminal(), self.observation('info')
 
 
     def render(self):
@@ -476,20 +504,38 @@ class PacmanEnv:
 
         
 
-    def observation(self):
+    def observation(self, space=None):
         """
         Provides an observation of the current state to the agent.
         This might be changed accordingly to the intended information
         the agent uses to decide.
         """
-        return self.get_position()
+        if not self.ready: raise Exception("Environment not initializated before a observation was requested. Make sure to reset the environment after instanciated.")
+        if space is None: space = self.state_space
+
+        raw_representation = {
+            'position'       : self.position,
+            'collected food' : tuple(1 - self.current_food[self.env_food == 1])
+        }
+
+        if self.ghosts:
+            raw_representation['ghost positions'] = tuple(ghost.position for ghost in self.ghosts)
+            raw_representation['is scared'] = tuple(int(ghost.is_scared()) for ghost in self.ghosts)
         
+        if self._capsules:
+            raw_representation['collected capsules'] = tuple(int(capsule not in self.current_capsules) for capsule in self._capsules)
+
+        if space == 'info':
+            return raw_representation
+    
+        elif space == 'default':
+            return tuple(raw_representation.values())
+            
 
         
 
     def run_policy(self,
                    policy : agents.Agent,
-                   max_length   = None,
                    timeout_time = 0,
                    delay        = 0.,
                    seed         = None):
@@ -501,15 +547,12 @@ class PacmanEnv:
         policy : Agent
             the policy being evaluated. Must inherit from Agent class
         
-        max_length : int, default=None
-            maximum number of steps before the game is stopped
-        
         timeout : int, default=0
             computational limit, in seconds, for an agent to output an action.
             Letting it to be 0 means no timeout.
         
         delay : int, default=0
-            time, in 
+            time, in seconds, between steps.
         """
         obs, done = self.reset(seed=seed)
 
@@ -528,4 +571,3 @@ class PacmanEnv:
             obs = next_obs
 
         return experiences
-        
