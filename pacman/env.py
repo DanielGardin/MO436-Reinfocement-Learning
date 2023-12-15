@@ -4,6 +4,7 @@ from pacman.actions import Actions
 from pacman import agents
 import time, signal, os
 import numpy as np
+from typing import Tuple, List
 
 def is_running_in_jupyter():
     try:
@@ -181,6 +182,32 @@ class PacmanEnv:
         return cls(layout_text, ghost_names, render_mode, state_space, config)
 
 
+    @classmethod
+    def contourDanger(cls, env_side=7, initial_pos = None, ghost_pos=(2,2), ghost_name = None, render_mode='ansi', state_space='default', config=None):
+        if env_side < 4:
+            raise ValueError("Environment cannot be smaller than 4 in each side.")
+
+        border = ["%"] * (env_side + 2)
+        inside = ['%'] + [' '] * env_side + ['%']
+
+        env = [border] + [inside.copy() for _ in range(env_side)] + [border]
+
+        if initial_pos is None:
+            initial_pos = (env_side//2 + 1, env_side//2 + 1)
+
+        x_agent, y_agent = initial_pos
+        x_ghost, y_ghost = ghost_pos
+
+        env[y_agent][x_agent] = 'P'
+        env[y_ghost][x_ghost] = 'G'
+
+        env[1][1] = '.'
+
+        layout = [''.join(line) for line in env]
+
+        return cls(layout, ghost_name, render_mode, state_space, config)
+
+
     def reset(self, *, random_init=False, seed=None):
         """
         Resets the environment to its initial state.
@@ -355,30 +382,31 @@ class PacmanEnv:
     # about the state in order to build an observation to the actor. #
     ##################################################################
 
-    def get_score(self): return self.score
+    def get_score(self) -> int : return self.score
 
-    def getghosts_position(self):
+    def get_ghosts_position(self) -> List[Tuple[int, int]]:
         return [ghost.position for ghost in self.ghosts]
 
-    def get_position(self): return self.position
+    def get_position(self) -> Tuple[int, int]: return self.position
 
-    def haswall(self, position): return bool(self.walls[position])
+    def haswall(self, position) -> bool: return bool(self.walls[position])
 
-    def hasfood(self, position): return bool(self.current_food[position])
+    def hasfood(self, position) -> bool: return bool(self.current_food[position])
 
-    def hascapsule(self, position): return position in self.current_capsules
+    def hascapsule(self, position) -> bool: return position in self.current_capsules
 
-    def get_num_food(self): return np.count_nonzero(self.current_food)
+    def get_num_food(self) -> int: return np.count_nonzero(self.current_food)
 
-    def get_total_food(self) : return np.count_nonzero(self.env_food)
+    def get_total_food(self) -> int: return np.count_nonzero(self.env_food)
 
-    def is_terminal(self): return self.is_win() or self.is_lose()
+    def is_terminal(self) -> bool: return self.is_win() or self.is_lose()
     
-    def is_win(self):  return self.get_num_food() == 0
+    def is_win(self) -> bool:  return self.get_num_food() == 0
 
-    def is_lose(self): return self.current_step > self.MAX_STEPS or any([manhattan_distance(self.position, ghost.position) < self.COLLISION_TOL and not ghost.is_scared() for ghost in self.ghosts])
+    def is_lose(self) -> bool:
+        return self.current_step > self.MAX_STEPS or any([manhattan_distance(self.position, ghost.position) < self.COLLISION_TOL and not ghost.is_scared() for ghost in self.ghosts])
 
-    def search_dist(self, source, target):
+    def search_dist(self, source, target) -> int:
         if isinstance(target, tuple):
             target = [target]
 

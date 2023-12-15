@@ -1,6 +1,6 @@
 from pacman.actions import Actions
 from pacman.distributions import Distribution, DiscreteDistribution
-from abc import ABC, abstractmethod
+from pacman.utils import discrete
 
 class Agent:
     """
@@ -117,6 +117,29 @@ class RandomGhost(Ghost):
             legal_actions.remove(reverse)
 
         return DiscreteDistribution({action : 1 for action in legal_actions})
+
+class FollowGhost(Ghost):
+    def act(self, state):
+        x_int, y_int = discrete(self.position)
+        lowest_dist = 1e10
+        select_action = Actions.NOOP
+
+        for action in state.get_legal_actions(self.position):
+            dx, dy = Actions.action_to_vector(action)
+            new_pos = discrete((x_int + dx, y_int + dy))
+
+            distance = state.search_dist(new_pos, state.position)
+
+            if distance < lowest_dist:
+                lowest_dist = distance
+                select_action = action
+        
+        return select_action
+
+
+class TerritorialGhost(Ghost):
+    pass
+
 
 
 class ImmobileGhost(Ghost):
