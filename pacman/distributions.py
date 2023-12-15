@@ -1,6 +1,7 @@
 from collections import Counter
-from random import random
+from numpy.random import rand
 from abc import ABC
+
 
 class Distribution(ABC):
     """
@@ -29,7 +30,7 @@ class DiscreteDistribution(dict, Distribution):
 
 
     def sample(self):
-        r = random()
+        r = rand()
 
         accum_prob = 0.
 

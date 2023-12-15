@@ -72,7 +72,7 @@ class Ghost:
         dx, dy = Actions.action_to_vector(action, speed)
 
         self.position  = (x + dx, y + dy)
-        self.direction = Actions.vector_to_action((dx, dy))
+        self.direction = action
 
 
     def scare(self, scare_time):
@@ -135,7 +135,6 @@ class FollowGhost(Ghost):
                 select_action = action
         
         return select_action
-
 
 
 class ImmobileGhost(Ghost):

@@ -64,7 +64,7 @@ class PacmanEnv:
     GHOST_REWARD = 10
     WIN_REWARD   = 50
 
-    TIME_PENALTY = 0
+    TIME_PENALTY = 1
     LOSE_PENALTY = 20
     WALL_PENALTY = 1
 
@@ -212,6 +212,7 @@ class PacmanEnv:
         """
         Resets the environment to its initial state.
         """
+        self.ready = True
 
         self.direction        = Actions.NOOP
         self.current_food     = self.env_food.copy()
@@ -227,10 +228,8 @@ class PacmanEnv:
         else:
             self.position = self.initial_position
 
-
+        self.lose  = False
         done = self.is_terminal()
-
-        self.ready = True
 
         self.render()
 
@@ -404,7 +403,7 @@ class PacmanEnv:
     def is_win(self) -> bool:  return self.get_num_food() == 0
 
     def is_lose(self) -> bool:
-        return self.current_step > self.MAX_STEPS or any([manhattan_distance(self.position, ghost.position) < self.COLLISION_TOL and not ghost.is_scared() for ghost in self.ghosts])
+        return self.current_step > self.MAX_STEPS or self.lose
 
     def search_dist(self, source, target) -> int:
         if isinstance(target, tuple):
@@ -443,19 +442,9 @@ class PacmanEnv:
     # convention for environment interaction, with step and reset.   #
     ##################################################################
 
-    def resolve_collision(self, ghost):
-        score_change = 0
+    def check_collision(self, ghost):
+        return manhattan_distance(self.position, ghost.position) < self.COLLISION_TOL
 
-        if manhattan_distance(self.position, ghost.position) < self.COLLISION_TOL \
-           and ghost.direction != self.position:
-            if ghost.is_scared():
-                score_change += self.GHOST_REWARD
-                ghost.reset()
-
-            else:
-                score_change -= self.LOSE_PENALTY
-
-        return score_change
 
 
     def step(self, action):
@@ -476,7 +465,7 @@ class PacmanEnv:
             return self.observation(), 0, True
 
         self.current_step += 1
-        score_change = 0
+        score_change = - self.TIME_PENALTY
 
         # Every agent decides an action
         ghost_actions = {ghost : ghost.act(self) for ghost in self.ghosts}
@@ -488,22 +477,37 @@ class PacmanEnv:
             dx, dy = Actions.action_to_vector(action, self.PACMAN_SPEED)
 
             self.position = (x + dx, y + dy)
+            self.direction = action
         
         else:
             score_change -= self.WALL_PENALTY
 
         for ghost, ghost_action in ghost_actions.items():
-            score_change += self.resolve_collision(ghost)
+            if Actions.reverse_direction(ghost_action) == self.direction and self.check_collision(ghost):
+                if ghost.is_scared():
+                    score_change += self.GHOST_REWARD
+                    ghost.reset()
+                    continue
+
+                else:
+                    score_change -= self.LOSE_PENALTY
+                    self.lose = True
+                    break
 
             ghost.apply_action(self, ghost_action)
 
-            score_change += self.resolve_collision(ghost)
+            if self.check_collision(ghost):
+                if ghost.is_scared():
+                    score_change += self.GHOST_REWARD
+                    ghost.reset()
+
+                else:
+                    score_change -= self.LOSE_PENALTY
+                    self.lose = True
+                    break
 
 
         discrete_pos  = discrete(self.position)
-        self.direction = action
-
-        score_change -= self.TIME_PENALTY
         if manhattan_distance(self.position, discrete_pos) <= 0.5:
             if self.hasfood(discrete_pos):
                 score_change += self.FOOD_REWARD
