@@ -137,10 +137,6 @@ class FollowGhost(Ghost):
         return select_action
 
 
-class TerritorialGhost(Ghost):
-    pass
-
-
 
 class ImmobileGhost(Ghost):
     def act(self, state):
