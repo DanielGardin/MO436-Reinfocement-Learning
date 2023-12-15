@@ -87,63 +87,28 @@ class PacmanEnv:
                  ):
         self.width  = len(layout_text[0])
         self.height = len(layout_text)
-
-        self.walls    = np.zeros((self.width, self.height))
-        self.food     = np.zeros((self.width, self.height))
-        self.capsules = set()
-
-        self.position  = (None, None)
-        self.direction = Actions.NOOP
-        self.ghosts    = []
-
-        self.layout      = layout_text
-        self.ghost_names = ghost_names
-        self._process_layout(layout_text, ghost_names)  
-
-        self.n_food       = np.count_nonzero(self.food)
-        self.score        = 0
+        self.layout = layout_text
 
         self.render_mode = render_mode
         self.state_space = state_space
 
-        self.features    = {}
+        self.walls    = np.zeros((self.width, self.height))
+        self.env_food = np.zeros((self.width, self.height))
+
+        self._capsules    = set()
+        self._ghosts      = []
+        self.ghost_names = ghost_names
+
+        self.initial_position  = (None, None)
+        
+        self._process_layout(layout_text, ghost_names)
+
+        self.ready = False
 
         if config is None: return
         for configuration, value in config.items():
             if hasattr(self, configuration) and configuration.isupper():
                 setattr(self, configuration, value)
-
-
-    def reset(self, *, random_init=False, seed=None):
-        """
-        Resets the environment to its initial state.
-        """
-
-        self.direction = Actions.NOOP
-        self.ghosts   = []
-
-        self._process_layout(self.layout, ghost_names=self.ghost_names)
-
-        self.score        = 0
-        self.current_step = 0
-
-        if random_init:
-            self.position     = self.get_random_legal_position()
-
-        self.render()
-
-        done = self.is_terminal()
-
-        return self.observation(), done
-
-
-    def __hash__(self):
-        state_repr = tuple(zip(*np.where(self.food == 1))) + \
-                     tuple(self.capsules) + \
-                     tuple(ghost.position for ghost in self.ghosts) + \
-                     self.position
-
-        return hash(state_repr)
 
 
     def _process_layout(self, layout_text, ghost_names=None):
@@ -167,11 +132,11 @@ class PacmanEnv:
                 if layout_char == '%':
                     self.walls[x, y] = 1
                 elif layout_char == '.':
-                    self.food[x, y] = 1
+                    self.env_food[x, y] = 1
                 elif layout_char == 'o':
-                    self.capsules.add((x, y))
+                    self._capsules.add((x, y))
                 elif layout_char == 'P':
-                    self.position = (x, y)
+                    self.initial_position = (x, y)
                 elif layout_char.isnumeric():
                     if ghost_names is None:
                         ghost = agents.RandomGhost((x, y))
@@ -179,7 +144,7 @@ class PacmanEnv:
                         idx = int(layout_char)
                         ghost = load_ghost(ghost_names[idx])((x, y))
                     
-                    self.ghosts.append(ghost)
+                    self._ghosts.append(ghost)
     
                 elif layout_char == 'G':
                     if ghost_names is None:
@@ -187,7 +152,40 @@ class PacmanEnv:
                     else:
                         ghost = load_ghost(ghost_names)((x, y))
 
-                    self.ghosts.append(ghost)
+                    self._ghosts.append(ghost)
+
+
+    def reset(self, *, random_init=False, seed=None):
+        """
+        Resets the environment to its initial state.
+        """
+
+        self.direction        = Actions.NOOP
+        self.current_food     = self.env_food.copy()
+        self.current_ghosts   = self._ghosts.copy()
+        self.current_capsules = self._capsules.copy()
+
+        self.score        = 0
+        self.current_step = 0
+
+        if random_init:
+            self.position = self.get_random_legal_position()
+        
+        else:
+            self.position = self.initial_position
+
+
+        done = self.is_terminal()
+
+        self.ready = True
+
+        self.render()
+
+        return self.observation(), done
+
+
+    def set_render(self, render_mode):
+        self.render_mode = render_mode
 
 
     @classmethod
@@ -284,7 +282,7 @@ class PacmanEnv:
         
         grid[x][y] += style.RESET
 
-        for i, ghost in enumerate(self.ghosts):
+        for i, ghost in enumerate(self.current_ghosts):
             x, y = discrete(ghost.position)
 
             if ghost.is_scared():
@@ -330,25 +328,25 @@ class PacmanEnv:
     def get_score(self): return self.score
 
     def get_ghosts_position(self):
-        return [ghost.position for ghost in self.ghosts]
+        return [ghost.position for ghost in self.current_ghosts]
 
     def get_position(self): return self.position
 
     def haswall(self, position): return bool(self.walls[position])
 
-    def hasfood(self, position): return bool(self.food[position])
+    def hasfood(self, position): return bool(self.current_food[position])
 
-    def hascapsule(self, position): return position in self.capsules
+    def hascapsule(self, position): return position in self.current_capsules
 
-    def get_num_food(self): return np.count_nonzero(self.food)
+    def get_num_food(self): return np.count_nonzero(self.current_food)
 
-    def get_total_food(self) : return self.n_food
+    def get_total_food(self) : return np.count_nonzero(self.env_food)
 
     def is_terminal(self): return self.is_win() or self.is_lose()
     
     def is_win(self):  return self.get_num_food() == 0
 
-    def is_lose(self): return self.current_step > self.MAX_STEPS or any([manhattan_distance(self.position, ghost.position) < self.COLLISION_TOL and not ghost.is_scared() for ghost in self.ghosts])
+    def is_lose(self): return self.current_step > self.MAX_STEPS or any([manhattan_distance(self.position, ghost.position) < self.COLLISION_TOL and not ghost.is_scared() for ghost in self.current_ghosts])
 
     def search_dist(self, source, target):
         if isinstance(target, tuple):
@@ -411,6 +409,9 @@ class PacmanEnv:
         reward      : Reward obtained after executing the action
         done        : Whether the state is terminal (or truncated) or not
         """
+        if not self.ready:
+            raise Exception("Environment not reseted before step is called. Make sure to reset the environment after instanciated.")
+
         if self.is_terminal():
             self.render()
 
@@ -420,9 +421,9 @@ class PacmanEnv:
         score_change = 0
 
         # Every agent decides an action
-        ghost_actions = [Actions.NOOP] * len(self.ghosts)
+        ghost_actions = [Actions.NOOP] * len(self.current_ghosts)
 
-        for i, ghost in enumerate(self.ghosts):
+        for i, ghost in enumerate(self.current_ghosts):
             ghost_actions[i] = ghost.act(self)
 
         # Resolve collisions
@@ -437,7 +438,7 @@ class PacmanEnv:
         else:
             score_change -= self.WALL_PENALTY
 
-        for ghost, ghost_action in zip(self.ghosts, ghost_actions):
+        for ghost, ghost_action in zip(self.current_ghosts, ghost_actions):
             score_change += self.resolve_collision(ghost)
 
             ghost.apply_action(self, ghost_action)
@@ -452,11 +453,11 @@ class PacmanEnv:
         if manhattan_distance(self.position, discrete_pos) <= 0.5:
             if self.hasfood(discrete_pos):
                 score_change += self.FOOD_REWARD
-                self.food[discrete_pos] = 0
+                self.current_food[discrete_pos] = 0
 
             if self.hascapsule(discrete_pos):
-                for ghost in self.ghosts: ghost.scare(self.SCARED_TIME)
-                self.capsules.remove(discrete_pos)
+                for ghost in self.current_ghosts: ghost.scare(self.SCARED_TIME)
+                self.current_capsules.remove(discrete_pos)
 
         if not self.is_lose() and self.get_num_food() == 0:
             score_change += self.WIN_REWARD
@@ -465,8 +466,7 @@ class PacmanEnv:
 
         self.render()
 
-
-        return self.observation(), score_change, self.is_terminal(), self.features
+        return self.observation(), score_change, self.is_terminal(), {}
 
 
     def render(self):
@@ -482,38 +482,8 @@ class PacmanEnv:
         This might be changed accordingly to the intended information
         the agent uses to decide.
         """
-        from copy import deepcopy
-
-
-        # Create feature space
-
-        self.add_feature('score',           self.get_score() )
-        self.add_feature('ghost dist',     [self.search_dist(self.position, ghost.position) for ghost in self.ghosts] )
-        self.add_feature('current_food',    self.get_num_food()/self.get_total_food() )
-        self.add_feature('nearest_food',    self.search_dist(self.position, list(zip(*np.where(self.food)))) )
-        self.add_feature('nearest_capsule', self.search_dist(self.position, self.capsules))
-
-        if self.state_space == 'default':
-            return deepcopy(self)
+        return self.get_position()
         
-        elif self.state_space == 'feature':
-            return self.feature_vector()
-
-
-    def add_feature(self, feature_name, feature):
-        self.features[feature_name] = feature
-    
-
-    def feature_vector(self):
-        vector = []
-
-        for feature in self.features.values():
-            if isinstance(feature, Sequence):
-                vector.extend(feature)
-            else:
-                vector.append(feature)
-        
-        return np.array(vector)
 
         
 
@@ -541,13 +511,11 @@ class PacmanEnv:
         delay : int, default=0
             time, in 
         """
-        self.reset(seed=seed)
+        obs, done = self.reset(seed=seed)
 
         experiences = []
 
-        n_steps = 0
-        obs = self.observation()
-        while True:
+        while not done:
             time.sleep(delay)
 
             with timeout(timeout_time):
@@ -557,9 +525,7 @@ class PacmanEnv:
 
             experiences.append((obs, action, reward, next_obs))
 
-            n_steps += 1
-            if max_length is not None and n_steps >= max_length: break
-            if done: break
+            obs = next_obs
 
         return experiences
         
