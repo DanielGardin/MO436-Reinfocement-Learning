@@ -1,5 +1,5 @@
 from pacman.actions import Actions
-from pacman.distributions import Distribution, DiscreteDistribution
+from pacman.distributions import Distribution, DiscreteDistribution, UniformDistribution
 from pacman.utils import discrete
 
 class Agent:
@@ -106,6 +106,7 @@ class Ghost:
                         "without overriding at least on of the methods " +
                         "'act' or 'get_distribution'.")
 
+
 class RandomGhost(Ghost):
     def get_distribution(self, state) -> Distribution:
         legal_actions = state.get_legal_actions(self.position)
@@ -116,13 +117,21 @@ class RandomGhost(Ghost):
         if reverse in legal_actions and num_actions > 1:
             legal_actions.remove(reverse)
 
-        return DiscreteDistribution({action : 1 for action in legal_actions})
+        return UniformDistribution(legal_actions)
+
+
+class ImmobileGhost(Ghost):
+    def act(self, state):
+        return Actions.NOOP
+
 
 class FollowGhost(Ghost):
     def act(self, state):
-        x_int, y_int = discrete(self.position)
+        
         lowest_dist = 1e10
         select_action = Actions.NOOP
+
+        x_int, y_int = discrete(self.position)
 
         for action in state.get_legal_actions(self.position):
             dx, dy = Actions.action_to_vector(action)
@@ -137,6 +146,3 @@ class FollowGhost(Ghost):
         return select_action
 
 
-class ImmobileGhost(Ghost):
-    def act(self, state):
-        return Actions.NOOP

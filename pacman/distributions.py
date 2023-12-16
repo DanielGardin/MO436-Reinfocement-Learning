@@ -11,7 +11,6 @@ class Distribution(ABC):
 
 
 class DiscreteDistribution(dict, Distribution):
-    
     @classmethod
     def from_probs(cls, values, probs):
         assert sum(probs) == 1
@@ -37,3 +36,7 @@ class DiscreteDistribution(dict, Distribution):
         for value, prob in self.items():
             accum_prob += prob
             if r <= accum_prob: return value
+
+class UniformDistribution(DiscreteDistribution):
+    def __init__(self, values) -> None:
+        super().__init__(zip(values, [1/len(values)] * len(values)))

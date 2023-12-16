@@ -4,7 +4,7 @@ from pacman.actions import Actions
 from pacman import agents
 import time, signal, os
 import numpy as np
-from typing import Tuple, List
+from typing import Tuple, List, Any
 
 def is_running_in_jupyter():
     try:
@@ -124,7 +124,7 @@ class PacmanEnv:
         - % - Wall
         - . - Food
         - o - Capsule
-        - \# - Ghost, where # is a numeric value, or G, if all ghosts are the same
+        - n - Ghost, where n is a numeric value, or G, if all ghosts are the same
         - P - Pacman
         Other characters are ignored.
         """
@@ -208,7 +208,7 @@ class PacmanEnv:
         return cls(layout, ghost_name, render_mode, state_space, config)
 
 
-    def reset(self, *, random_init=False, seed=None):
+    def reset(self, *, random_init=False, seed=None) -> Tuple[Any, bool]:
         """
         Resets the environment to its initial state.
         """
@@ -236,7 +236,7 @@ class PacmanEnv:
         return self.observation(), done
 
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         representation = ""
 
         if self.ready:
@@ -255,8 +255,10 @@ class PacmanEnv:
     def set_render(self, render_mode):
         self.render_mode = render_mode
 
+        return self
 
-    def get_random_legal_position(self):
+
+    def get_random_legal_position(self) -> Tuple[int, int]:
         """
         Returns a non-wall position in the grid, which can be used to
         initialize the state from a random start.
@@ -269,7 +271,7 @@ class PacmanEnv:
         return (free_spaces[0][idx], free_spaces[1][idx])
     
     
-    def get_legal_actions(self, position):
+    def get_legal_actions(self, position) -> List[str]:
         """
         Returns all actions that can be executed in a given position in
         the current state.
@@ -299,7 +301,7 @@ class PacmanEnv:
         return legal_actions
 
 
-    def __str__(self):
+    def __str__(self) -> str:
         """Ansi representation of a state."""
 
         grid = [[' ' for _ in range(self.height)] for _ in range(self.width)]
@@ -386,7 +388,7 @@ class PacmanEnv:
     def get_ghosts_position(self) -> List[Tuple[int, int]]:
         return [ghost.position for ghost in self.ghosts]
 
-    def get_position(self) -> Tuple[int, int]: return self.position
+    def get_position(self): return self.position
 
     def haswall(self, position) -> bool: return bool(self.walls[position])
 
@@ -442,12 +444,11 @@ class PacmanEnv:
     # convention for environment interaction, with step and reset.   #
     ##################################################################
 
-    def check_collision(self, ghost):
+    def check_collision(self, ghost) -> bool:
         return manhattan_distance(self.position, ghost.position) < self.COLLISION_TOL
 
 
-
-    def step(self, action):
+    def step(self, action) -> Tuple[Any, int, bool, Any]:
         """
         Executes a provided action to the current state and returns a tuple
         containing
@@ -462,7 +463,7 @@ class PacmanEnv:
         if self.is_terminal():
             self.render()
 
-            return self.observation(), 0, True
+            return self.observation(), 0, True, self.observation('info')
 
         self.current_step += 1
         score_change = - self.TIME_PENALTY
@@ -532,9 +533,8 @@ class PacmanEnv:
             if is_running_in_jupyter(): clear_output()
             print(self)
 
-        
 
-    def observation(self, space=None):
+    def observation(self, space=None) -> Any:
         """
         Provides an observation of the current state to the agent.
         This might be changed accordingly to the intended information
@@ -549,8 +549,9 @@ class PacmanEnv:
         }
 
         if self.ghosts:
-            raw_representation['ghost positions'] = tuple(ghost.position for ghost in self.ghosts)
-            raw_representation['is scared'] = tuple(int(ghost.is_scared()) for ghost in self.ghosts)
+            raw_representation['ghost positions'] = tuple(ghost.position  for ghost in self.ghosts)
+            raw_representation['ghost direction'] = tuple(ghost.direction for ghost in self.ghosts)
+            raw_representation['scared']   = tuple(int(ghost.is_scared()) for ghost in self.ghosts)
         
         if self._capsules:
             raw_representation['collected capsules'] = tuple(int(capsule not in self.current_capsules) for capsule in self._capsules)
@@ -560,9 +561,7 @@ class PacmanEnv:
     
         elif space == 'default':
             return tuple(raw_representation.values())
-            
 
-        
 
     def run_policy(self,
                    policy : agents.Agent,
