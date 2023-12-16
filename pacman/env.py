@@ -92,6 +92,7 @@ class PacmanEnv:
 
         self.render_mode = render_mode
         self.state_space = state_space
+        self.state_dims  = (2,)
 
         self.walls    = np.zeros((self.width, self.height))
         self.env_food = np.zeros((self.width, self.height))
@@ -100,7 +101,7 @@ class PacmanEnv:
         self.ghosts      = []
         self.ghost_names = ghost_names
 
-        self.initial_position  = (None, None)
+        self.initial_position  = (-1, -1)
         
         self._process_layout(layout_text, ghost_names)
 
@@ -396,28 +397,30 @@ class PacmanEnv:
 
     def hascapsule(self, position) -> bool: return position in self.current_capsules
 
+    def get_food_positions(self): list(zip(*np.where(self.current_food)))
+
     def get_num_food(self) -> int: return np.count_nonzero(self.current_food)
 
     def get_total_food(self) -> int: return np.count_nonzero(self.env_food)
 
     def is_terminal(self) -> bool: return self.is_win() or self.is_lose()
     
-    def is_win(self) -> bool:  return self.get_num_food() == 0
+    def is_win(self) -> bool:  return not self.is_lose() and self.get_num_food() == 0
 
     def is_lose(self) -> bool:
         return self.current_step > self.MAX_STEPS or self.lose
 
-    def search_dist(self, source, target) -> int:
+    def search_dist(self, source:Tuple[int, int], target) -> int:
         if isinstance(target, tuple):
             target = [target]
 
         visited = {}
-        queue = [source]
-        dists = [0]
+        distance = int(0)
+    
+        queue = [(source, distance)]
 
         while queue:
-            candidate = queue.pop(0)
-            distance  = dists.pop(0)
+            candidate, distance = queue.pop(0)
 
             if candidate in visited:
                 continue
@@ -432,8 +435,7 @@ class PacmanEnv:
             new_candidates = [(x+1, y), (x-1, y), (x, y+1), (x, y-1)]
 
             for new_candidate in new_candidates:
-                queue.append(new_candidate)
-                dists.append(distance + 1)
+                queue.append((new_candidate, distance + 1))
             
             visited[candidate] = distance
             
@@ -478,10 +480,11 @@ class PacmanEnv:
             dx, dy = Actions.action_to_vector(action, self.PACMAN_SPEED)
 
             self.position = (x + dx, y + dy)
-            self.direction = action
         
         else:
             score_change -= self.WALL_PENALTY
+
+        self.direction = action
 
         for ghost, ghost_action in ghost_actions.items():
             if Actions.reverse_direction(ghost_action) == self.direction and self.check_collision(ghost):
@@ -562,6 +565,14 @@ class PacmanEnv:
         elif space == 'default':
             return tuple(raw_representation.values())
 
+        elif space == 'features':
+            features = {
+                "distance to ghost" : self.search_dist(self.position, self.get_ghosts_position()),
+                "distance to food"  : self.search_dist(self.position, self.get_food_positions()),
+            }
+
+            return np.array(features.values())
+
 
     def run_policy(self,
                    policy : agents.Agent,
@@ -600,3 +611,4 @@ class PacmanEnv:
             obs = next_obs
 
         return experiences
+

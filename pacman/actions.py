@@ -1,4 +1,5 @@
-from pacman.distributions import DiscreteDistribution
+from pacman.distributions import UniformDistribution
+from pacman.utils import discrete
 
 class Actions:
     UP    = 'Up'
@@ -9,25 +10,38 @@ class Actions:
 
     actions = [UP, DOWN, RIGHT, LEFT]
 
-    TURN_LEFT = { UP : LEFT,
-                  DOWN : RIGHT,
-                  RIGHT  : UP,
-                  LEFT  : DOWN,
-                  NOOP  : NOOP}
+    TURN_LEFT = {
+        UP : LEFT,
+        DOWN : RIGHT,
+        RIGHT  : UP,
+        LEFT  : DOWN,
+        NOOP  : NOOP
+    }
 
     TURN_RIGHT = dict([(y,x) for x, y in TURN_LEFT.items()])
 
-    REVERSE = { UP : DOWN,
-                DOWN : UP,
-                RIGHT  : LEFT,
-                LEFT  : RIGHT,
-                NOOP  : NOOP}
+    REVERSE = {
+        UP : DOWN,
+        DOWN : UP,
+        RIGHT  : LEFT,
+        LEFT  : RIGHT,
+        NOOP  : NOOP
+    }
 
-    _directions = {UP : ( 0,  1),
-                   DOWN : ( 0, -1),
-                   RIGHT  : ( 1,  0),
-                   LEFT  : (-1,  0),
-                   NOOP  : ( 0,  0)}
+    _directions = {
+        UP : ( 0,  1),
+        DOWN : ( 0, -1),
+        RIGHT  : ( 1,  0),
+        LEFT  : (-1,  0),
+        NOOP  : ( 0,  0)
+        }
+    
+    order = {
+        UP : 0,
+        DOWN : 1,
+        RIGHT : 2,
+        LEFT : 3
+    }
 
     @staticmethod
     def reverse_direction(action):
@@ -40,6 +54,10 @@ class Actions:
     @staticmethod
     def turn_left(action):
         return Actions.TURN_LEFT[action]  
+
+    @staticmethod
+    def action_index(action):
+        return Actions.order[action]
 
     @staticmethod
     def vector_to_action(vector):
@@ -62,7 +80,6 @@ class Actions:
 
         return (dx * speed, dy * speed)
     
-
     @staticmethod
     def apply_action(position, action):
         dx, dy = Actions.action_to_vector(action)
@@ -72,5 +89,13 @@ class Actions:
         return (x + dx, y + dy)
     
     @staticmethod
-    def sample():
-        return DiscreteDistribution.from_probs(Actions.actions, [1/len(Actions.actions) for _ in Actions.actions]).sample()
+    def calculate_next_position(position, action):
+        x_int, y_int = discrete(position)
+        dx, dy = Actions.action_to_vector(action)
+        next_pos = discrete((x_int + dx, y_int + dy))
+
+        return next_pos
+
+    @staticmethod
+    def sample() -> str:
+        return UniformDistribution(Actions.actions).sample()

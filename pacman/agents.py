@@ -1,6 +1,7 @@
 from pacman.actions import Actions
 from pacman.distributions import Distribution, DiscreteDistribution, UniformDistribution
 from pacman.utils import discrete
+from typing import Generic, TypeVar
 
 class Agent:
     """
@@ -11,18 +12,18 @@ class Agent:
     """
 
     def __init_subclass__(cls):
-        def act(self, state):
+        def act(self, state) -> str:
             dist = self.get_distribution(state)
 
             return dist.sample()
 
     
-        def get_distribution(self, state):
+        def get_distribution(self, state) -> Distribution[str]:
             selected_action = self.act(state)
 
-            probs = [int(selected_action == action) for action in Actions.actions]
+            probs = [float(selected_action == action) for action in Actions.actions]
 
-            return DiscreteDistribution.from_probs(Actions.actions, probs)
+            return DiscreteDistribution(Actions.actions, probs)
 
 
         has_act  = hasattr(cls, 'act')              or setattr(cls, 'act', act)
@@ -93,9 +94,9 @@ class Ghost:
         def get_distribution(self, state):
             selected_action = self.act(state)
 
-            probs = [int(selected_action == action) for action in Actions.actions]
+            probs = [float(selected_action == action) for action in Actions.actions]
 
-            return DiscreteDistribution.from_probs(Actions.actions, probs)
+            return DiscreteDistribution(Actions.actions, probs)
 
 
         has_act  = hasattr(cls, 'act')              or setattr(cls, 'act', act)
@@ -108,6 +109,10 @@ class Ghost:
 
 
 class RandomGhost(Ghost):
+    """
+    Ghost that selects a random action every step, except turning 180°.
+    """
+
     def get_distribution(self, state) -> Distribution:
         legal_actions = state.get_legal_actions(self.position)
         num_actions = len(legal_actions)
@@ -121,23 +126,28 @@ class RandomGhost(Ghost):
 
 
 class ImmobileGhost(Ghost):
+    """
+    Ghost that makes no actions each step. Literally immobile
+    """
+
     def act(self, state):
         return Actions.NOOP
 
 
 class FollowGhost(Ghost):
+    """
+    Deterministic ghost which selects the action that lead as close
+    as possible to the agent.
+    """
     def act(self, state):
         
         lowest_dist = 1e10
         select_action = Actions.NOOP
 
-        x_int, y_int = discrete(self.position)
-
         for action in state.get_legal_actions(self.position):
-            dx, dy = Actions.action_to_vector(action)
-            new_pos = discrete((x_int + dx, y_int + dy))
+            next_pos = Actions.calculate_next_position(self.position, action)
 
-            distance = state.search_dist(new_pos, state.position)
+            distance = state.search_dist(next_pos, state.position)
 
             if distance < lowest_dist:
                 lowest_dist = distance
@@ -146,3 +156,56 @@ class FollowGhost(Ghost):
         return select_action
 
 
+class RobustGhost(Ghost):
+    """
+    Select the action which minimizes de distance from the agent supposing the agent
+    takes the action to minimize distance from ghost
+    """
+    def act(self, state):
+        robust_action = Actions.NOOP
+        robust_distance = 0
+        
+        for agent_action in state.get_legal_actions(state.position):
+            next_agent_pos = Actions.calculate_next_position(state.position, agent_action)
+
+            distances = {
+                action : state.search_dist(next_agent_pos, Actions.calculate_next_position(self.position, action)) \
+                for action in state.get_legal_actions(self.position)
+            }
+
+            best_action = min(distances, key=lambda k : distances[k])
+            distance    = distances[best_action]
+
+
+            if distance >= robust_distance:
+                robust_distance = distance
+                robust_action   = best_action
+        
+        return robust_action
+
+class StochasticRobustGhost(Ghost):
+    """
+    Select the action which minimizes de distance from the agent supposing the agent
+    takes the action to minimize distance from ghost
+    """
+    def get_distribution(self, state):
+        robust_actions = []
+        robust_distance = 0
+        
+        for agent_action in state.get_legal_actions(state.position):
+            next_agent_pos = Actions.calculate_next_position(state.position, agent_action)
+
+            distances = {
+                action : state.search_dist(next_agent_pos, Actions.calculate_next_position(self.position, action)) \
+                for action in state.get_legal_actions(self.position)
+            }
+
+            best_action = min(distances, key=lambda k : distances[k])
+            distance    = distances[best_action]
+
+
+            if distance >= robust_distance:
+                robust_distance = distance
+                robust_actions.append(best_action)
+        
+        return UniformDistribution(robust_actions)
