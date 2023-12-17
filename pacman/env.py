@@ -7,6 +7,7 @@ from typing import Tuple, List, Any
 
 import matplotlib as mlp
 import matplotlib.pyplot as plt
+import pygame
 
 def is_running_in_jupyter():
     try:
@@ -95,13 +96,13 @@ class PacmanEnv:
     SCARED_GHOST_COLOR = style.BLUE
 
     GHOST_HEXCOLORS = [
-    "#FF0000",
-    "#FFb8FF",
-    "#00FFFF",
-    "#FFB852"
+        (252, 0, 0),
+        (0, 252, 255),
+        (252, 180, 255),
+        (252, 180, 85)
     ]
 
-    SCARED_GHOST_HEXCOLOR = "#0000FF"
+    SCARED_GHOST_HEXCOLOR = (36, 36, 255)
 
     RAW_GHOST_SHAPE = [
         ( 0,    0.3 ),
@@ -118,8 +119,8 @@ class PacmanEnv:
     ]
 
     GHOST_SHAPE = chaikins_corner_cutting(RAW_GHOST_SHAPE, 1)
-    GHOST_SIZE = 0.56
 
+    GRID_SIZE = 50
 
     def __init__(self,
                  layout_text,
@@ -132,7 +133,7 @@ class PacmanEnv:
         self.height = len(layout_text)
         self.layout = layout_text
 
-        self.render_mode = render_mode
+        self.set_render(render_mode)
         self.state_space = state_space
         self.state_dims  = (2,)
 
@@ -284,7 +285,7 @@ class PacmanEnv:
 
         self.lose  = False
         done = self.is_terminal()
-
+        
         self.render()
 
         return self.observation(), done
@@ -304,12 +305,6 @@ class PacmanEnv:
             representation = "Not ready Pacman environment."
 
         return representation
-
-
-    def set_render(self, render_mode):
-        self.render_mode = render_mode
-
-        return self
 
 
     def get_random_legal_position(self) -> Tuple[int, int]:
@@ -460,12 +455,14 @@ class PacmanEnv:
     
     def is_win(self) -> bool:  return not self.is_lose() and self.get_num_food() == 0
 
-    def is_lose(self) -> bool:
-        return self.current_step > self.MAX_STEPS or self.lose
+    def is_lose(self) -> bool: return self.current_step > self.MAX_STEPS or self.lose
 
     def search_dist(self, source:Tuple[int, int], target) -> int:
         if isinstance(target, tuple):
             target = [target]
+
+        if len(target) == 0:
+            return -1
 
         visited = {}
         distance = int(0)
@@ -482,7 +479,7 @@ class PacmanEnv:
                 continue
 
             if candidate in target:
-                break
+                return distance
             
             x, y = candidate
             new_candidates = [(x+1, y), (x-1, y), (x, y+1), (x, y-1)]
@@ -491,8 +488,18 @@ class PacmanEnv:
                 queue.append((new_candidate, distance + 1))
             
             visited[candidate] = distance
-            
-        return distance
+
+        return -1
+
+
+    def linear_radar(self, position, direction):
+        if self.haswall(discrete(position)):
+            return -1
+
+        next_position = Actions.apply_action(position, direction)
+
+        return self.linear_radar(next_position, direction) + 1
+
 
     ##################################################################
     # Environment mechanism, this implementation follows Gymnasium   #
@@ -584,93 +591,108 @@ class PacmanEnv:
         return self.observation(), score_change, self.is_terminal(), self.observation('info')
 
 
+    def set_render(self, render_mode):
+        self.render_mode = render_mode
+
+        if render_mode == 'human':
+            self.screen = None
+
+        return self
+
+
     def render(self):
         if self.render_mode == 'ansi':
             if is_running_in_jupyter(): clear_output()
             print(self)
 
         elif self.render_mode == 'human':
-            fig, ax = self.render_mlp()
+            if self.screen is None:
+                self.screen = pygame.display.set_mode((self.width * self.GRID_SIZE, self.height * self.GRID_SIZE))
+                pygame.display.set_caption("Pacman environment")
 
-            plt.show()
+            pygame.event.pump()
+
+            self._render_pygame()
 
         elif isinstance(self.render_mode, agents.Agent):
             pass
 
     
-    def render_mlp(self):
-        fig, ax = plt.subplots(figsize=(self.width, self.height))
-        ax.set_axis_off()
+    def _render_pygame(self):
+        self.screen.fill((0, 0, 0))
+
         for x in range(self.width):
             for y in range(self.height):
-
                 if self.haswall((x,y)):
-                    rect = plt.Rectangle((x, y), 1, 1, color='blue')
+                    pygame.draw.rect(self.screen, (36, 36, 255), (x*self.GRID_SIZE, (self.height-y-1)*self.GRID_SIZE, self.GRID_SIZE, self.GRID_SIZE))
                 
-                else:
-                    rect = plt.Rectangle((x, y), 1, 1, color='black')
-                
-                ax.add_patch(rect)
 
                 if self.hasfood((x,y)):
-                    radius = 1
-                    food = plt.Circle((x + 1/2, y + 1/2), 0.05, color='white')
-                    
-                    ax.add_patch(food)
+                    pygame.draw.circle(self.screen, (255, 255, 255), ((x+0.5)* self.GRID_SIZE, (self.height-y-0.5)* self.GRID_SIZE), self.GRID_SIZE/20)
 
         x_pacman, y_pacman = self.position
 
-        angle_conversion = {
-            Actions.NOOP  : 0,
-            Actions.RIGHT : 0,
-            Actions.UP    : 90,
-            Actions.LEFT  : 180,
-            Actions.DOWN  : 270
-        }
+        y_pacman = (self.height - 0.5 - y_pacman) * self.GRID_SIZE
+        x_pacman = (x_pacman + 0.5) * self.GRID_SIZE
 
-        angle = angle_conversion[self.direction]
+        radius = 0.4 * self.GRID_SIZE
 
-        pacman = mlp.patches.Wedge((x_pacman + 1/2, y_pacman + 1/2), 0.38, angle + 35, angle - 35, width= 0.38, color='yellow')
+        pygame.draw.circle(self.screen, (252, 252, 0), (x_pacman, y_pacman), radius)
 
-        ax.add_patch(pacman)
+        dx, dy = (1, 0) if self.direction == Actions.NOOP else Actions.action_to_vector(self.direction) 
+
+        mouth = [
+            (x_pacman + (dx + abs(dx) - 1) * radius, y_pacman + (-dy + abs(dy) - 1) * radius),
+            (x_pacman, y_pacman),
+            (x_pacman + (dx - abs(dx) + 1) * radius, y_pacman + (-dy - abs(dy) + 1) * radius)
+        ]
+
+        pygame.draw.polygon(self.screen, (0, 0, 0), mouth)
+
+        pupil_shift = 0.05 * self.GRID_SIZE
 
         eyes = {
             Actions.NOOP : (0, 0),
-            Actions.UP : (0, -0.2),
-            Actions.DOWN : (0, 0.2),
-            Actions.LEFT : (-0.2, 0),
-            Actions.RIGHT : (0.2, 0)
+            Actions.UP : (0, -pupil_shift),
+            Actions.DOWN : (0, pupil_shift),
+            Actions.LEFT : (-pupil_shift, 0),
+            Actions.RIGHT : (pupil_shift, 0)
         }
 
         for i, ghost in enumerate(self.ghosts):
             x_ghost, y_ghost = ghost.position
 
-            coords = [(-i * self.GHOST_SIZE + x_ghost + 1/2, -j * self.GHOST_SIZE + y_ghost + 1/2) for (i, j) in self.GHOST_SHAPE]
+            y_ghost = (self.height - 0.5 - y_ghost) * self.GRID_SIZE
+            x_ghost = (x_ghost + 0.5) * self.GRID_SIZE
+
+
+            coords = [(i * 0.5 * self.GRID_SIZE + x_ghost, j * 0.5 * self.GRID_SIZE + y_ghost) for (i, j) in self.GHOST_SHAPE]
 
             color = self.SCARED_GHOST_HEXCOLOR if ghost.is_scared() else self.GHOST_HEXCOLORS[i]
 
-            ghost_body = mlp.patches.Polygon(coords, color=color)
+            pygame.draw.polygon(self.screen, color, coords)
+
 
             dx, dy = eyes[ghost.direction]
 
-            left_eye  = mlp.patches.Ellipse((x_ghost + 1/2 + self.GHOST_SIZE * (-0.3 + dx)/1.5, y_ghost + 1/2 + self.GHOST_SIZE * (0.3 - dy)/1.5), 0.3*self.GHOST_SIZE, 0.4*self.GHOST_SIZE, color="white")
-            right_eye = mlp.patches.Ellipse((x_ghost + 1/2 + self.GHOST_SIZE * (0.3 + dx)/1.5, y_ghost + 1/2 + self.GHOST_SIZE * (0.3 - dy)/1.5), 0.3*self.GHOST_SIZE, 0.4*self.GHOST_SIZE, color="white")
+            eye_offset = 0.05 * self.GRID_SIZE
+            eye_shape = (0.2 * self.GRID_SIZE, 0.3 * self.GRID_SIZE)
 
-            left_pupil  = mlp.patches.Circle((x_ghost + 1/2 + self.GHOST_SIZE * (-0.3 + dx)/1.5, y_ghost + 1/2 + self.GHOST_SIZE * (0.3 - dy)/1.5), 0.1*self.GHOST_SIZE, color="black")
-            right_pupil = mlp.patches.Circle((x_ghost + 1/2 + self.GHOST_SIZE * (0.3 + dx)/1.5, y_ghost + 1/2 + self.GHOST_SIZE * (0.3 - dy)/1.5), 0.1*self.GHOST_SIZE, color="black")
+            pupil_radius = 0.09 * self.GRID_SIZE
 
-            ax.add_patch(ghost_body)
-            ax.add_patch(left_eye)
-            ax.add_patch(right_eye)
+            pygame.draw.ellipse(self.screen, (255, 255, 255), (x_ghost - (eye_shape[0] + eye_offset), y_ghost - eye_shape[1] , *eye_shape))
+            pygame.draw.ellipse(self.screen, (255, 255, 255), (x_ghost + eye_offset, y_ghost - eye_shape[1] , *eye_shape))
 
-            ax.add_patch(left_pupil)
-            ax.add_patch(right_pupil)
+            pygame.draw.circle(self.screen, (0, 0, 0), (x_ghost - (eye_shape[0]//2 + eye_offset - dx), y_ghost - eye_shape[1] // 2 + dy), pupil_radius)
+            pygame.draw.circle(self.screen, (0, 0, 0), (x_ghost + eye_offset + eye_shape[0]//2 + dx, y_ghost - eye_shape[1] // 2 + dy), pupil_radius)
+
+        pygame.display.update()        
 
 
-        ax.set_xlim(0, self.width)
-        ax.set_ylim(0, self.height)
-
-        return fig, ax
+    def close(self):
+        if self.render_mode == "human":
+            pygame.quit()
+            self.screen = None
 
 
     def observation(self, space=None) -> Any:
@@ -703,11 +725,16 @@ class PacmanEnv:
 
         elif space == 'features':
             features = {
-                "distance to ghost" : self.search_dist(self.position, self.get_ghosts_position()),
-                "distance to food"  : self.search_dist(self.position, self.get_food_positions()),
+                "distance to ghost"   : self.search_dist(self.position, self.get_ghosts_position()),
+                "distance to food"    : self.search_dist(self.position, self.get_food_positions()),
+                "distance to capsule" : self.search_dist(self.position, self._capsules),
+                "up radar"            : self.linear_radar(self.position, Actions.UP),
+                "down radar"          : self.linear_radar(self.position, Actions.DOWN),
+                "left radar"          : self.linear_radar(self.position, Actions.LEFT),
+                "right radar"         : self.linear_radar(self.position, Actions.RIGHT),
             }
 
-            return tuple(np.array(list(features.values()), dtype=np.float32))
+            return np.array(list(features.values()), dtype=np.float32)
 
 
     def run_policy(self,
@@ -727,7 +754,7 @@ class PacmanEnv:
             computational limit, in seconds, for an agent to output an action.
             Letting it to be 0 means no timeout.
         
-        delay : int, default=0
+        delay : int, default=0set
             time, in seconds, between steps.
         """
         obs, done = self.reset(seed=seed)
@@ -746,7 +773,88 @@ class PacmanEnv:
 
             obs = next_obs
 
+        self.close()
+
         return experiences
+
 
     def render_policy(self, policy):
         self.set_render(policy)
+
+
+    def render_mlp(self):
+        if self.ax is None:
+            self.fig, self.ax = plt.subplots(figsize=(self.width, self.height))
+            self.ax.set_axis_off()
+
+        else:
+            self.ax.clear()
+    
+        for x in range(self.width):
+            for y in range(self.height):
+
+                if self.haswall((x,y)):
+                    rect = plt.Rectangle((x, y), 1, 1, color='blue')
+                
+                else:
+                    rect = plt.Rectangle((x, y), 1, 1, color='black')
+                
+                self.ax.add_patch(rect)
+
+                if self.hasfood((x,y)):
+                    food = plt.Circle((x + 1/2, y + 1/2), 0.05, color='white')
+                    
+                    self.ax.add_patch(food)
+
+
+        x_pacman, y_pacman = self.position
+
+        angle_conversion = {
+            Actions.NOOP  : 0,
+            Actions.RIGHT : 0,
+            Actions.UP    : 90,
+            Actions.LEFT  : 180,
+            Actions.DOWN  : 270
+        }
+
+        angle = angle_conversion[self.direction]
+
+        pacman = mlp.patches.Wedge((x_pacman + 1/2, y_pacman + 1/2), 0.38, angle + 35, angle - 35, width= 0.38, color='yellow')
+
+        self.ax.add_patch(pacman)
+
+        eyes = {
+            Actions.NOOP : (0, 0),
+            Actions.UP : (0, -0.2),
+            Actions.DOWN : (0, 0.2),
+            Actions.LEFT : (-0.2, 0),
+            Actions.RIGHT : (0.2, 0)
+        }
+
+        for i, ghost in enumerate(self.ghosts):
+            x_ghost, y_ghost = ghost.position
+
+            coords = [(-i * self.GHOST_SIZE + x_ghost + 1/2, -j * self.GHOST_SIZE + y_ghost + 1/2) for (i, j) in self.GHOST_SHAPE]
+
+            color = self.SCARED_GHOST_HEXCOLOR if ghost.is_scared() else self.GHOST_HEXCOLORS[i]
+
+            ghost_body = mlp.patches.Polygon(coords, color=color)
+
+            dx, dy = eyes[ghost.direction]
+
+            left_eye  = mlp.patches.Ellipse((x_ghost + 1/2 + self.GHOST_SIZE * (-0.3 + dx)/1.5, y_ghost + 1/2 + self.GHOST_SIZE * (0.3 - dy)/1.5), 0.3*self.GHOST_SIZE, 0.4*self.GHOST_SIZE, color="white")
+            right_eye = mlp.patches.Ellipse((x_ghost + 1/2 + self.GHOST_SIZE * (0.3 + dx)/1.5, y_ghost + 1/2 + self.GHOST_SIZE * (0.3 - dy)/1.5), 0.3*self.GHOST_SIZE, 0.4*self.GHOST_SIZE, color="white")
+
+            left_pupil  = mlp.patches.Circle((x_ghost + 1/2 + self.GHOST_SIZE * (-0.3 + dx)/1.5, y_ghost + 1/2 + self.GHOST_SIZE * (0.3 - dy)/1.5), 0.1*self.GHOST_SIZE, color="black")
+            right_pupil = mlp.patches.Circle((x_ghost + 1/2 + self.GHOST_SIZE * (0.3 + dx)/1.5, y_ghost + 1/2 + self.GHOST_SIZE * (0.3 - dy)/1.5), 0.1*self.GHOST_SIZE, color="black")
+
+            self.ax.add_patch(ghost_body)
+            self.ax.add_patch(left_eye)
+            self.ax.add_patch(right_eye)
+
+            self.ax.add_patch(left_pupil)
+            self.ax.add_patch(right_pupil)
+
+
+        self.ax.set_xlim(0, self.width)
+        self.ax.set_ylim(0, self.height)
