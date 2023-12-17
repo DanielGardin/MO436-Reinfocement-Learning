@@ -1,20 +1,37 @@
 from pacman.utils import discrete, manhattan_distance
-from collections.abc import Sequence 
 from pacman.actions import Actions
 from pacman import agents
 import time, signal, os
 import numpy as np
 from typing import Tuple, List, Any
 
+import matplotlib as mlp
+import matplotlib.pyplot as plt
+
 def is_running_in_jupyter():
     try:
-        get_ipython()
+        get_ipython() # type: ignore
         return True
     except NameError:
         return False
 
 if is_running_in_jupyter():
     from IPython.display import clear_output
+
+
+def chaikins_corner_cutting(coords, refinements=5):
+    coords = np.array(coords)
+
+    for _ in range(refinements):
+        L = coords.repeat(2, axis=0)
+        R = np.empty_like(L)
+        R[0] = L[0]
+        R[2::2] = L[1:-1:2]
+        R[1:-1:2] = L[2::2]
+        R[-1] = L[-1]
+        coords = L * 0.75 + R * 0.25
+
+    return coords
 
 class style():
     BLACK = '\033[30m'
@@ -75,8 +92,33 @@ class PacmanEnv:
         style.MAGENTA,
         style.GREEN
     ]
-
     SCARED_GHOST_COLOR = style.BLUE
+
+    GHOST_HEXCOLORS = [
+    "#FF0000",
+    "#FFb8FF",
+    "#00FFFF",
+    "#FFB852"
+    ]
+
+    SCARED_GHOST_HEXCOLOR = "#0000FF"
+
+    RAW_GHOST_SHAPE = [
+        ( 0,    0.3 ),
+        ( 0.25, 0.75 ),
+        ( 0.5,  0.3 ),
+        ( 0.75, 0.75 ),
+        ( 0.75, -0.5 ),
+        ( 0.5,  -0.75 ),
+        (-0.5,  -0.75 ),
+        (-0.75, -0.5 ),
+        (-0.75, 0.75 ),
+        (-0.5,  0.3 ),
+        (-0.25, 0.75 )
+    ]
+
+    GHOST_SHAPE = chaikins_corner_cutting(RAW_GHOST_SHAPE, 1)
+    GHOST_SIZE = 0.56
 
 
     def __init__(self,
@@ -129,6 +171,7 @@ class PacmanEnv:
         - P - Pacman
         Other characters are ignored.
         """
+        idx = 0
         max_y = self.height - 1
         for y in range(self.height):
             for x in range(self.width):
@@ -154,8 +197,11 @@ class PacmanEnv:
                 elif layout_char == 'G':
                     if ghost_names is None:
                         ghost = agents.RandomGhost((x, y))
-                    else:
+                    elif isinstance(ghost_names, str):
                         ghost = load_ghost(ghost_names)((x, y))
+                    else:
+                        ghost = load_ghost(ghost_names[idx])((x, y))
+                        idx += 1
 
                     self.ghosts.append(ghost)
 
@@ -184,7 +230,7 @@ class PacmanEnv:
 
 
     @classmethod
-    def contourDanger(cls, env_side=7, initial_pos = None, ghost_pos=(2,2), ghost_name = None, render_mode='ansi', state_space='default', config=None):
+    def contourDanger(cls, env_side=7, initial_pos = None, ghost_pos=(2,2), ghost_names = None, render_mode='ansi', state_space='default', config=None):
         if env_side < 4:
             raise ValueError("Environment cannot be smaller than 4 in each side.")
 
@@ -206,7 +252,14 @@ class PacmanEnv:
 
         layout = [''.join(line) for line in env]
 
-        return cls(layout, ghost_name, render_mode, state_space, config)
+        return cls(layout, ghost_names, render_mode, state_space, config)
+
+    
+    @classmethod
+    def classic(cls, size="small", ghost_names = None, render_mode='ansi', state_space='default', config=None):
+        env_name = f"{size}Classic"
+
+        return cls.from_file(env_name, ghost_names, render_mode, state_space, config)
 
 
     def reset(self, *, random_init=False, seed=None) -> Tuple[Any, bool]:
@@ -397,7 +450,7 @@ class PacmanEnv:
 
     def hascapsule(self, position) -> bool: return position in self.current_capsules
 
-    def get_food_positions(self): list(zip(*np.where(self.current_food)))
+    def get_food_positions(self): return list(zip(*np.where(self.current_food == 1)))
 
     def get_num_food(self) -> int: return np.count_nonzero(self.current_food)
 
@@ -536,6 +589,89 @@ class PacmanEnv:
             if is_running_in_jupyter(): clear_output()
             print(self)
 
+        elif self.render_mode == 'human':
+            fig, ax = self.render_mlp()
+
+            plt.show()
+
+        elif isinstance(self.render_mode, agents.Agent):
+            pass
+
+    
+    def render_mlp(self):
+        fig, ax = plt.subplots(figsize=(self.width, self.height))
+        ax.set_axis_off()
+        for x in range(self.width):
+            for y in range(self.height):
+
+                if self.haswall((x,y)):
+                    rect = plt.Rectangle((x, y), 1, 1, color='blue')
+                
+                else:
+                    rect = plt.Rectangle((x, y), 1, 1, color='black')
+                
+                ax.add_patch(rect)
+
+                if self.hasfood((x,y)):
+                    radius = 1
+                    food = plt.Circle((x + 1/2, y + 1/2), 0.05, color='white')
+                    
+                    ax.add_patch(food)
+
+        x_pacman, y_pacman = self.position
+
+        angle_conversion = {
+            Actions.NOOP  : 0,
+            Actions.RIGHT : 0,
+            Actions.UP    : 90,
+            Actions.LEFT  : 180,
+            Actions.DOWN  : 270
+        }
+
+        angle = angle_conversion[self.direction]
+
+        pacman = mlp.patches.Wedge((x_pacman + 1/2, y_pacman + 1/2), 0.38, angle + 35, angle - 35, width= 0.38, color='yellow')
+
+        ax.add_patch(pacman)
+
+        eyes = {
+            Actions.NOOP : (0, 0),
+            Actions.UP : (0, -0.2),
+            Actions.DOWN : (0, 0.2),
+            Actions.LEFT : (-0.2, 0),
+            Actions.RIGHT : (0.2, 0)
+        }
+
+        for i, ghost in enumerate(self.ghosts):
+            x_ghost, y_ghost = ghost.position
+
+            coords = [(-i * self.GHOST_SIZE + x_ghost + 1/2, -j * self.GHOST_SIZE + y_ghost + 1/2) for (i, j) in self.GHOST_SHAPE]
+
+            color = self.SCARED_GHOST_HEXCOLOR if ghost.is_scared() else self.GHOST_HEXCOLORS[i]
+
+            ghost_body = mlp.patches.Polygon(coords, color=color)
+
+            dx, dy = eyes[ghost.direction]
+
+            left_eye  = mlp.patches.Ellipse((x_ghost + 1/2 + self.GHOST_SIZE * (-0.3 + dx)/1.5, y_ghost + 1/2 + self.GHOST_SIZE * (0.3 - dy)/1.5), 0.3*self.GHOST_SIZE, 0.4*self.GHOST_SIZE, color="white")
+            right_eye = mlp.patches.Ellipse((x_ghost + 1/2 + self.GHOST_SIZE * (0.3 + dx)/1.5, y_ghost + 1/2 + self.GHOST_SIZE * (0.3 - dy)/1.5), 0.3*self.GHOST_SIZE, 0.4*self.GHOST_SIZE, color="white")
+
+            left_pupil  = mlp.patches.Circle((x_ghost + 1/2 + self.GHOST_SIZE * (-0.3 + dx)/1.5, y_ghost + 1/2 + self.GHOST_SIZE * (0.3 - dy)/1.5), 0.1*self.GHOST_SIZE, color="black")
+            right_pupil = mlp.patches.Circle((x_ghost + 1/2 + self.GHOST_SIZE * (0.3 + dx)/1.5, y_ghost + 1/2 + self.GHOST_SIZE * (0.3 - dy)/1.5), 0.1*self.GHOST_SIZE, color="black")
+
+            ax.add_patch(ghost_body)
+            ax.add_patch(left_eye)
+            ax.add_patch(right_eye)
+
+            ax.add_patch(left_pupil)
+            ax.add_patch(right_pupil)
+
+
+        ax.set_xlim(0, self.width)
+        ax.set_ylim(0, self.height)
+
+        return fig, ax
+
 
     def observation(self, space=None) -> Any:
         """
@@ -571,11 +707,11 @@ class PacmanEnv:
                 "distance to food"  : self.search_dist(self.position, self.get_food_positions()),
             }
 
-            return np.array(features.values())
+            return tuple(np.array(list(features.values()), dtype=np.float32))
 
 
     def run_policy(self,
-                   policy : agents.Agent,
+                   policy,
                    timeout_time = 0,
                    delay        = 0.,
                    seed         = None):
@@ -612,3 +748,5 @@ class PacmanEnv:
 
         return experiences
 
+    def render_policy(self, policy):
+        self.set_render(policy)
