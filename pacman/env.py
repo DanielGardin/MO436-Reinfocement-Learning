@@ -7,6 +7,7 @@ from typing import Tuple, List, Any
 
 import matplotlib as mlp
 import matplotlib.pyplot as plt
+import seaborn as sns
 import pygame
 
 def is_running_in_jupyter():
@@ -312,13 +313,14 @@ class PacmanEnv:
         Returns a non-wall position in the grid, which can be used to
         initialize the state from a random start.
         """
-        free_spaces = np.where(self.walls == 0)
-        n_spaces    = len(free_spaces[0])
+        free_spaces = self.get_all_free_positions()
 
-        idx = np.random.randint(n_spaces)
+        idx = np.random.randint(len(free_spaces))
 
-        return (free_spaces[0][idx], free_spaces[1][idx])
+        return free_spaces[idx]
     
+    def get_all_free_positions(self):
+        return list(zip(*np.where(self.walls == 0)))
     
     def get_legal_actions(self, position) -> List[str]:
         """
@@ -734,7 +736,7 @@ class PacmanEnv:
                 "right radar"         : self.linear_radar(self.position, Actions.RIGHT),
             }
 
-            return np.array(list(features.values()), dtype=np.float32)
+            return tuple(features.values())
 
 
     def run_policy(self,
@@ -778,17 +780,9 @@ class PacmanEnv:
         return experiences
 
 
-    def render_policy(self, policy):
-        self.set_render(policy)
-
-
-    def render_mlp(self):
-        if self.ax is None:
-            self.fig, self.ax = plt.subplots(figsize=(self.width, self.height))
-            self.ax.set_axis_off()
-
-        else:
-            self.ax.clear()
+    def check_policy(self, policy):
+        self.fig, self.ax = plt.subplots(figsize=(self.width, self.height))
+        self.ax.set_axis_off()
     
         for x in range(self.width):
             for y in range(self.height):
@@ -834,7 +828,7 @@ class PacmanEnv:
         for i, ghost in enumerate(self.ghosts):
             x_ghost, y_ghost = ghost.position
 
-            coords = [(-i * self.GHOST_SIZE + x_ghost + 1/2, -j * self.GHOST_SIZE + y_ghost + 1/2) for (i, j) in self.GHOST_SHAPE]
+            coords = [(-i * 0.5 + x_ghost + 1/2, -j * 0.5 + y_ghost + 1/2) for (i, j) in self.GHOST_SHAPE]
 
             color = self.SCARED_GHOST_HEXCOLOR if ghost.is_scared() else self.GHOST_HEXCOLORS[i]
 
@@ -842,11 +836,11 @@ class PacmanEnv:
 
             dx, dy = eyes[ghost.direction]
 
-            left_eye  = mlp.patches.Ellipse((x_ghost + 1/2 + self.GHOST_SIZE * (-0.3 + dx)/1.5, y_ghost + 1/2 + self.GHOST_SIZE * (0.3 - dy)/1.5), 0.3*self.GHOST_SIZE, 0.4*self.GHOST_SIZE, color="white")
-            right_eye = mlp.patches.Ellipse((x_ghost + 1/2 + self.GHOST_SIZE * (0.3 + dx)/1.5, y_ghost + 1/2 + self.GHOST_SIZE * (0.3 - dy)/1.5), 0.3*self.GHOST_SIZE, 0.4*self.GHOST_SIZE, color="white")
+            left_eye  = mlp.patches.Ellipse((x_ghost + 1/2 + 0.5 * (-0.3 + dx)/1.5, y_ghost + 1/2 + 0.5 * (0.3 - dy)/1.5), 0.3*0.5, 0.4*0.5, color="white")
+            right_eye = mlp.patches.Ellipse((x_ghost + 1/2 + 0.5 * (0.3 + dx)/1.5, y_ghost + 1/2 + 0.5 * (0.3 - dy)/1.5), 0.3*0.5, 0.4*0.5, color="white")
 
-            left_pupil  = mlp.patches.Circle((x_ghost + 1/2 + self.GHOST_SIZE * (-0.3 + dx)/1.5, y_ghost + 1/2 + self.GHOST_SIZE * (0.3 - dy)/1.5), 0.1*self.GHOST_SIZE, color="black")
-            right_pupil = mlp.patches.Circle((x_ghost + 1/2 + self.GHOST_SIZE * (0.3 + dx)/1.5, y_ghost + 1/2 + self.GHOST_SIZE * (0.3 - dy)/1.5), 0.1*self.GHOST_SIZE, color="black")
+            left_pupil  = mlp.patches.Circle((x_ghost + 1/2 + 0.5 * (-0.3 + dx)/1.5, y_ghost + 1/2 + 0.5 * (0.3 - dy)/1.5), 0.1*0.5, color="black")
+            right_pupil = mlp.patches.Circle((x_ghost + 1/2 + 0.5 * (0.3 + dx)/1.5, y_ghost + 1/2 + 0.5 * (0.3 - dy)/1.5), 0.1*0.5, color="black")
 
             self.ax.add_patch(ghost_body)
             self.ax.add_patch(left_eye)
@@ -858,3 +852,19 @@ class PacmanEnv:
 
         self.ax.set_xlim(0, self.width)
         self.ax.set_ylim(0, self.height)
+
+        if self.state_space == "default":
+            info = self.observation('info')
+
+            Qmap = np.zeros_like(self.walls)
+
+            for coord in self.get_all_free_positions():
+                info['position'] = coord
+
+                state = tuple(info.values())
+            
+                _, Qmap[coord] = policy.max_Q(state)
+
+        sns.heatmap(Qmap)
+                
+        plt.show()
