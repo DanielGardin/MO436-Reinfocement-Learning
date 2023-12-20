@@ -159,6 +159,9 @@ class PacmanEnv:
             else:
                 raise ValueError(f"No configuration named {config}.")
 
+    def is_stochastic(self):
+        return any(ghost.is_stochastic() for ghost in self.ghosts)
+
 
     def _process_layout(self, layout_text, ghost_names=None):
         """

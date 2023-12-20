@@ -85,6 +85,9 @@ class Ghost:
         return self.scared_timer > 0
 
 
+    def is_stochastic(self):
+        pass
+
     def __init_subclass__(cls):
         def act(self, state):
             dist = self.get_distribution(state)
@@ -134,6 +137,9 @@ class RandomGhost(Ghost):
     """
     Ghost that selects a random action every step, except turning 180°.
     """
+    def is_stochastic(self):
+        return True
+    
 
     def get_distribution(self, state) -> Distribution:
         eps = random()
@@ -171,6 +177,9 @@ class ImmobileGhost(Ghost):
     """
     Ghost that makes no actions each step. Literally immobile
     """
+    def is_stochastic(self):
+        return False
+
 
     def act(self, state):
         return Actions.NOOP
@@ -181,6 +190,10 @@ class RobustGhost(Ghost):
     Select the action which minimizes de distance from the agent supposing the agent
     takes the action to minimize distance from ghost
     """
+    def is_stochastic(self):
+        return False
+
+
     def act(self, state):
         robust_action = Actions.NOOP
         robust_distance = 0
@@ -212,6 +225,10 @@ class StochasticRobustGhost(Ghost):
     Select the action which minimizes de distance from the agent supposing the agent
     takes the action to minimize distance from ghost
     """
+    def is_stochastic(self):
+        return True
+
+
     def get_distribution(self, state):
         robust_actions = []
         robust_distance = 0
