@@ -2,6 +2,7 @@ from pacman.actions import Actions
 from pacman.distributions import Distribution, DiscreteDistribution, UniformDistribution
 from pacman.utils import discrete
 from typing import Generic, TypeVar
+from random import random
 
 class Agent:
     """
@@ -107,6 +108,27 @@ class Ghost:
                         "without overriding at least on of the methods " +
                         "'act' or 'get_distribution'.")
 
+class FollowGhost(Ghost):
+    """
+    Deterministic ghost which selects the action that lead as close
+    as possible to the agent.
+    """
+    def act(self, state):
+        select_action = Actions.NOOP
+
+        legal_actions = state.get_legal_actions(self.position)
+
+        distances = {
+            action : state.search_dist(Actions.calculate_next_position(self.position, action), state.position) for action in legal_actions
+        }
+
+        if self.is_scared():
+            select_action = max(distances, key=lambda k : distances[k])
+        
+        else:
+            select_action = min(distances, key=lambda k : distances[k])
+
+        return select_action
 
 class RandomGhost(Ghost):
     """
@@ -114,15 +136,35 @@ class RandomGhost(Ghost):
     """
 
     def get_distribution(self, state) -> Distribution:
-        legal_actions = state.get_legal_actions(self.position)
-        num_actions = len(legal_actions)
+        eps = random()
 
-        reverse = Actions.reverse_direction(self.direction)
+        if eps < 0.6:
+            legal_actions = state.get_legal_actions(self.position)
+            num_actions = len(legal_actions)
 
-        if reverse in legal_actions and num_actions > 1:
-            legal_actions.remove(reverse)
+            reverse = Actions.reverse_direction(self.direction)
 
-        return UniformDistribution(legal_actions)
+            if reverse in legal_actions and num_actions > 1:
+                legal_actions.remove(reverse)
+
+            return UniformDistribution(legal_actions)
+
+        else:
+            select_action = Actions.NOOP
+
+            legal_actions = state.get_legal_actions(self.position)
+
+            distances = {
+                action : state.search_dist(Actions.calculate_next_position(self.position, action), state.position) for action in legal_actions
+            }
+
+            if self.is_scared():
+                select_action = max(distances, key=lambda k : distances[k])
+            
+            else:
+                select_action = min(distances, key=lambda k : distances[k])
+
+            return UniformDistribution([select_action])
 
 
 class ImmobileGhost(Ghost):
@@ -132,28 +174,6 @@ class ImmobileGhost(Ghost):
 
     def act(self, state):
         return Actions.NOOP
-
-
-class FollowGhost(Ghost):
-    """
-    Deterministic ghost which selects the action that lead as close
-    as possible to the agent.
-    """
-    def act(self, state):
-        
-        lowest_dist = 1e10
-        select_action = Actions.NOOP
-
-        for action in state.get_legal_actions(self.position):
-            next_pos = Actions.calculate_next_position(self.position, action)
-
-            distance = state.search_dist(next_pos, state.position)
-
-            if distance < lowest_dist:
-                lowest_dist = distance
-                select_action = action
-        
-        return select_action
 
 
 class RobustGhost(Ghost):
@@ -173,9 +193,13 @@ class RobustGhost(Ghost):
                 for action in state.get_legal_actions(self.position)
             }
 
-            best_action = min(distances, key=lambda k : distances[k])
-            distance    = distances[best_action]
+            if self.is_scared():
+                best_action = max(distances, key=lambda k : distances[k])
+            
+            else:
+                best_action = min(distances, key=lambda k : distances[k])
 
+            distance = distances[best_action]
 
             if distance >= robust_distance:
                 robust_distance = distance
@@ -200,7 +224,12 @@ class StochasticRobustGhost(Ghost):
                 for action in state.get_legal_actions(self.position)
             }
 
-            best_action = min(distances, key=lambda k : distances[k])
+            if self.is_scared():
+                best_action = max(distances, key=lambda k : distances[k])
+            
+            else:
+                best_action = min(distances, key=lambda k : distances[k])
+
             distance    = distances[best_action]
 
 

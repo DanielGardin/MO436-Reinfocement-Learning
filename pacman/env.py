@@ -97,10 +97,10 @@ class PacmanEnv:
     SCARED_GHOST_COLOR = style.BLUE
 
     GHOST_HEXCOLORS = [
-        (252, 0, 0),
-        (0, 252, 255),
+        (252, 0., 0.),
+        (0, 255, 255),
         (252, 180, 255),
-        (252, 180, 85)
+        (252, 180/155, 85/155)
     ]
 
     SCARED_GHOST_HEXCOLOR = (36, 36, 255)
@@ -493,10 +493,47 @@ class PacmanEnv:
 
         return -1
 
+    def search_radar(self, source, target, cap=2):
+        if isinstance(target, tuple):
+            target = [target]
+
+        if len(target) == 0:
+            return 0
+
+        visited = {}
+        distance = int(0)
+    
+        queue = [(source, distance)]
+
+        found = 0
+
+        while queue:
+            candidate, distance = queue.pop(0)
+
+            if distance > cap:
+                return found
+
+            if candidate in visited:
+                continue
+
+            if self.haswall(candidate):
+                continue
+
+            if candidate in target:
+                found += 1
+            
+            x, y = candidate
+            new_candidates = [(x+1, y), (x-1, y), (x, y+1), (x, y-1)]
+
+            for new_candidate in new_candidates:
+                queue.append((new_candidate, distance + 1))
+            
+            visited[candidate] = distance
+
 
     def linear_radar(self, position, direction):
         if self.haswall(discrete(position)):
-            return -1
+            return 0
 
         next_position = Actions.apply_action(position, direction)
 
@@ -616,9 +653,6 @@ class PacmanEnv:
 
             self._render_pygame()
 
-        elif isinstance(self.render_mode, agents.Agent):
-            pass
-
     
     def _render_pygame(self):
         self.screen.fill((0, 0, 0))
@@ -631,6 +665,9 @@ class PacmanEnv:
 
                 if self.hasfood((x,y)):
                     pygame.draw.circle(self.screen, (255, 255, 255), ((x+0.5)* self.GRID_SIZE, (self.height-y-0.5)* self.GRID_SIZE), self.GRID_SIZE/20)
+
+        for (x, y) in self.current_capsules:
+            pygame.draw.circle(self.screen, (255, 255, 255), ((x+0.5)* self.GRID_SIZE, (self.height-y-0.5)* self.GRID_SIZE), self.GRID_SIZE/5)
 
         x_pacman, y_pacman = self.position
 
@@ -726,17 +763,69 @@ class PacmanEnv:
             return tuple(raw_representation.values())
 
         elif space == 'features':
-            features = {
-                "distance to ghost"   : self.search_dist(self.position, self.get_ghosts_position()),
-                "distance to food"    : self.search_dist(self.position, self.get_food_positions()),
-                "distance to capsule" : self.search_dist(self.position, self._capsules),
-                "up radar"            : self.linear_radar(self.position, Actions.UP),
-                "down radar"          : self.linear_radar(self.position, Actions.DOWN),
-                "left radar"          : self.linear_radar(self.position, Actions.LEFT),
-                "right radar"         : self.linear_radar(self.position, Actions.RIGHT),
-            }
+            features = []
 
-            return tuple(features.values())
+            for action in Actions.actions:
+                new_pos = discrete(Actions.apply_action(self.position, action))
+                if self.haswall(new_pos):
+                    new_pos = self.position
+
+                action_features = { # 
+                    "distance to ghost"   : self.search_dist(new_pos, self.get_ghosts_position()) / self.width,
+                    "distance to food"    : self.search_dist(new_pos, self.get_food_positions()) / self.width,
+                    "active ghost 1 step" : self.search_radar(new_pos, self.get_ghosts_position(), cap=1),
+                    "active ghost 2 step" : self.search_radar(new_pos, self.get_ghosts_position(), cap=2),
+                    "has food"            : int(self.hasfood(new_pos)),
+                }
+
+                features.append(tuple(action_features.values()))
+            return tuple(features)
+        
+        elif space == 'pixel':
+
+            state = np.zeros((3, self.height, self.width))
+
+            for x in range(self.width):
+                for y in range(self.height):
+                    if self.haswall((x, y)):
+                        state[:, y, x] = (0., 0., 1.)
+                    
+                    elif self.hasfood((x, y)):
+                        state[:, y, x] = (1., 1., 1.)
+                    
+                    else:
+                        state[:, y, x] = (0., 0., 0.)
+            
+            x_pacman, y_pacman = discrete(self.position)
+
+            state[:, y_pacman, x_pacman] = (1., 1., 0.)
+
+            for ghost in self.ghosts:
+                x, y = discrete(ghost.position)
+
+                if ghost.is_scared():
+                    state[:, y, x] = (0, 1., 0.)
+                
+                else:
+                    state[:, y, x] = (1., 0., 0.)
+
+
+                if ghost.direction == Actions.UP:
+                    state[-1, y, x] += .2
+                
+                elif ghost.direction == Actions.DOWN:
+                    state[-1, y, x] += .4
+
+                elif ghost.direction == Actions.LEFT:
+                    state[-1, y, x] += .6
+                
+                elif ghost.direction == Actions.RIGHT:
+                    state[-1, y, x] += .8
+
+            for (x, y) in self.current_capsules:
+                state[:, y, x] = (.2, .2, .2)
+
+            return tuple(state.reshape((-1,)))
 
 
     def run_policy(self,
@@ -781,17 +870,36 @@ class PacmanEnv:
 
 
     def check_policy(self, policy):
-        self.fig, self.ax = plt.subplots(figsize=(self.width, self.height))
+        self.fig, self.ax = plt.subplots(figsize=(self.width + 1, self.height))
         self.ax.set_axis_off()
+
+        if self.state_space == "default":
+            info = self.observation('info')
+
+            Qmap = np.zeros_like(self.walls)
+
+            for coord in self.get_all_free_positions():
+                for action in Actions.actions:
+                    new_pos = Actions.calculate_next_position(coord, action)
+                    
+                    info['position'] = coord
+
+                    state = tuple(info.values())
+            
+                    Qmap[new_pos] += policy.Q(state, action) / 4
+
+
+
+            sns.heatmap(Qmap.T, alpha=.5, vmax=50, vmin=-50)
+
+            print(Qmap)
     
         for x in range(self.width):
             for y in range(self.height):
 
                 if self.haswall((x,y)):
                     rect = plt.Rectangle((x, y), 1, 1, color='blue')
-                
-                else:
-                    rect = plt.Rectangle((x, y), 1, 1, color='black')
+            
                 
                 self.ax.add_patch(rect)
 
@@ -832,7 +940,7 @@ class PacmanEnv:
 
             color = self.SCARED_GHOST_HEXCOLOR if ghost.is_scared() else self.GHOST_HEXCOLORS[i]
 
-            ghost_body = mlp.patches.Polygon(coords, color=color)
+            ghost_body = mlp.patches.Polygon(coords, color=tuple(c/255 for c in color))
 
             dx, dy = eyes[ghost.direction]
 
@@ -853,18 +961,5 @@ class PacmanEnv:
         self.ax.set_xlim(0, self.width)
         self.ax.set_ylim(0, self.height)
 
-        if self.state_space == "default":
-            info = self.observation('info')
-
-            Qmap = np.zeros_like(self.walls)
-
-            for coord in self.get_all_free_positions():
-                info['position'] = coord
-
-                state = tuple(info.values())
-            
-                _, Qmap[coord] = policy.max_Q(state)
-
-        sns.heatmap(Qmap)
                 
         plt.show()
